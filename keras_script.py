@@ -72,7 +72,7 @@ M = block_diag(*blocks_list) #matrice usata nella pairwiseRankingHingeLoss
 # Counting Dataset
 counting_dataset = list()
 
-counting_dataset_path = 'counting_data_UCF_training'
+counting_dataset_path = 'counting_data_UCF'
 for im in glob.glob(os.path.join(counting_dataset_path, '*.jpg')):
     counting_dataset.append(im)
 
@@ -87,7 +87,7 @@ for i in range(len(counting_dataset)):
 #Ranking Dataset    
 ranking_dataset = list()
 
-ranking_dataset_path = 'ranking_data_training'
+ranking_dataset_path = 'ranking_data'
 for im in glob.glob(os.path.join(ranking_dataset_path, '*.jpg')):
     ranking_dataset.append(im)
 
