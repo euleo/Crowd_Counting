@@ -100,8 +100,8 @@ counting_input = Input(shape=(224, 224, 3), dtype='float32', name='counting_inpu
 ranking_input = Input(shape=(224, 224, 3), dtype='float32', name='ranking_input')
 x = conv_model([counting_input,ranking_input])
 #a single convolutional layer (a single 3x3x512 filter with stride 1 and zero padding to maintain same size)
-counting_output = Conv2D(1, (3, 3), strides=(1, 1), padding='same', data_format=None, dilation_rate=(1, 1), activation='relu', use_bias=True, kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=None, bias_regularizer=None, activity_regularizer=None, kernel_constraint=None, bias_constraint=None)(x)
-ranking_output = AveragePooling2D(pool_size=(14, 14), strides=None, padding='valid', data_format=None)(counting_output)
+counting_output = Conv2D(1, (3, 3),strides=(1, 1), padding='same', data_format=None, dilation_rate=(1, 1), activation='relu', use_bias=True, kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=None, bias_regularizer=None, activity_regularizer=None, kernel_constraint=None, bias_constraint=None, name='conv2d_1')(x)
+ranking_output = AveragePooling2D(pool_size=(14, 14), strides=None, padding='valid', data_format=None, name='average_pooling2d_1')(counting_output)
 new_model = Model(inputs=[counting_input,ranking_input], outputs=[counting_output,ranking_output])
 new_model.summary()
 
@@ -132,7 +132,7 @@ for t in range(0,5):
     splits_list.append(counting_dataset[t*split_size:t*split_size+split_size])    
 
 # 5-fold cross validation
-for f in range(0,5):
+for f in range(0,1):
     print('Folder '+str(f))
 
     splits_list_tmp = splits_list.copy()

@@ -4,6 +4,7 @@ import cv2
 import random
 import math
 import scipy.io
+import skimage.transform
 
 from tensorflow.python.keras.applications.vgg16 import preprocess_input
 
@@ -78,7 +79,7 @@ class DataGenerator(tf.keras.utils.Sequence):
             crop_dmap = dmap[random_y1:random_y1+random_size, random_x1:random_x1+random_size]
             
             #resize to CNN output
-            y_tmp[i] = scipy.misc.imresize(crop_dmap, (14,14), interp='bilinear')
+            y_tmp[i] = skimage.transform.resize(crop_dmap, (14,14), anti_aliasing=True)
             y[i] = np.resize(y_tmp[i],(14,14,1))
 
         #### ALGORITHM TO GENERATE RANKED DATASETS ####
