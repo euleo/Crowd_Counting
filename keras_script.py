@@ -106,14 +106,18 @@ counting_input = Input(shape=(224, 224, 3), dtype='float32', name='counting_inpu
 ranking_input = Input(shape=(224, 224, 3), dtype='float32', name='ranking_input')
 x = conv_model([counting_input,ranking_input])
 #a single convolutional layer (a single 3x3x512 filter with stride 1 and zero padding to maintain same size)
-counting_output = Conv2D(1, (3, 3),strides=(1, 1), padding='same', data_format=None, dilation_rate=(1, 1), activation='relu', use_bias=True, kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=None, bias_regularizer=None, activity_regularizer=None, kernel_constraint=None, bias_constraint=None, name='counting')(x)
-ranking_output = Lambda(lambda i: 14.0 * 14.0 * i, name='ranking')(GlobalAveragePooling2D()(counting_output))
+counting_output = Conv2D(1, (3, 3),strides=(1, 1), padding='same', data_format=None, dilation_rate=(1, 1), activation='relu', use_bias=True, kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=None, bias_regularizer=None, activity_regularizer=None, kernel_constraint=None, bias_constraint=None, name='counting_output')(x)
+
+# The ranking output is computed using SUM pool. Here I use
+# GlobalAveragePooling2D followed by a multiplication by 14^2 to do
+# this.
+ranking_output = Lambda(lambda i: 14.0 * 14.0 * i, name='ranking_output')(GlobalAveragePooling2D()(counting_output))
 new_model = Model(inputs=[counting_input,ranking_input], outputs=[counting_output,ranking_output])
 new_model.summary()
 
 optimizer = SGD(lr=0.000001, decay=0.0005, momentum=0.0, nesterov=False)
-loss={'counting': 'mean_squared_error', 'ranking': pairwiseRankingHingeLoss}
-loss_weights=[1.0, 1.0]
+loss={'counting_output': 'mean_squared_error', 'ranking_output': pairwiseRankingHingeLoss}
+loss_weights=[1.0, 0.0]
 metrics = {'ranking': ['mae', 'mse']}
 
 new_model.compile(optimizer=optimizer,
@@ -154,13 +158,20 @@ for f in range(0,1):
     #counting validation split labels
     split_val_labels = {k: labels[k] for k in split_val}    
     
-    #counting train split labels
+    # counting train split labels
     split_train_labels = {k: labels[k] for k in split_train}
         
-    #train
-    new_model.fit_generator(generator=DataGenerator(split_train, split_train_labels, ranking_dataset, **params), epochs=1, callbacks=[tbCallBack])
-    
-    #train+validation
-    train_generator = DataGenerator(split_train, split_train_labels, split_rank_train, **params)
-    val_generator = DataGenerator(split_val, split_val_labels, split_rank_train, **params)
-    new_model.fit_generator(generator=train_generator, epochs=10)
+    # train for FIVE epochs.
+    train_generator = DataGenerator(split_train, split_train_labels, ranking_dataset, **params)
+    new_model.fit_generator(generator=train_generator, epochs=5)
+
+    # Look at some outputs... Note, this is NOT how the model should
+    # be evaluated. This is CROPPING and passing ranking images, but
+    # rather you should pass ENTIRE test images and compare the
+    # ranking_output with the ground truth COUNTS for each image.
+    test_generator = DataGenerator(split_val, split_val_labels, ranking_dataset, **params)
+    res = new_model.predict_generator(test_generator)
+    print('Count stats for split={}:'.format(f))
+    print(' min count: {}'.format(res[1].min()))
+    print(' max count: {}'.format(res[1].max()))
+    print(' avg count: {}'.format(res[1].mean()))

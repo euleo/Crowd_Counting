@@ -85,7 +85,7 @@ class DataGenerator(tf.keras.utils.Sequence):
             if ADB:
                 import skimage.transform
                 y_tmp[i] = skimage.transform.resize(crop_dmap, (14,14), anti_aliasing=True)
-                y[i] = np.resize(y_tmp[i],(14,14,1))
+                y_counting[i] = np.resize(y_tmp[i],(14,14,1))
             else:
                 y_tmp[i] = scipy.misc.imresize(crop_dmap, (14,14), interp='bilinear')           
                 y_counting[i] = np.resize(y_tmp[i],(14,14,1))
@@ -205,5 +205,5 @@ class DataGenerator(tf.keras.utils.Sequence):
         y_ranking = np.zeros((self.batch_size,1,1,1)) # dummy ranking batch target
         X_counting = preprocess_input(X_counting)
         X_ranking = preprocess_input(X_ranking)
-        return {'counting_input': X_counting, 'ranking_input': X_ranking}, {'counting_output': y, 'ranking_output': y_ranking}
+        return {'counting_input': X_counting, 'ranking_input': X_ranking}, {'counting_output': y_counting, 'ranking_output': y_ranking}
 
