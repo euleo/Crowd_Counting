@@ -8,6 +8,7 @@ import scipy.signal
 import math     
 import random
 import itertools
+import matplotlib.pyplot as plt
 
 from tensorflow.python.keras.callbacks import TensorBoard
 from tensorflow.python.keras import backend as K
@@ -18,6 +19,8 @@ from datagen import DataGenerator
 from tensorflow.python.keras.optimizers import SGD
 from scipy.ndimage.filters import gaussian_filter 
 from scipy.linalg import block_diag
+from tensorflow.python.keras.applications.vgg16 import preprocess_input
+from tensorflow.python.keras.preprocessing import image
 
 tbCallBack = TensorBoard(log_dir='./Graph', histogram_freq=0, write_graph=True, write_images=True)
 
@@ -26,31 +29,33 @@ def load_gt_from_mat(gt_file, gt_shape):
     mat_contents = scipy.io.loadmat(gt_file)
     oct_struct = mat_contents['annPoints']
     for dot in oct_struct:
-        gt[int(math.floor(dot[1]))-1,int(math.floor(dot[0]))-1] = 1.0
+        gt[int(math.floor(dot[1]))-1, int(math.floor(dot[0]))-1] = 1.0
     sigma = 15
-    gt = gt[:, :, 0]
     density_map = gaussian_filter(gt, sigma)
     return density_map
     
-def pairwiseRankingHingeLoss(yTrue,yPred):    
-    kvar = K.constant(M)
 
+def pairwiseRankingHingeLoss(yTrue,yPred):
+    kvar = K.constant(M)
 #    yPred = K.squeeze(yPred, 3)
 #    yPred = K.squeeze(yPred, 2)
     
-    differences = K.dot(kvar,yPred)
+    differences = K.dot(kvar,yPred)# (50x25)*(25x1)=(50x1)    
+    # differences = tf.Print(differences, [differences], message='\ndifferences = ', summarize=50)#50x1
     
-    var = K.zeros(shape=(50, 1))
+    var = K.zeros(shape=(50, 1))    
     
     max_tensor = K.maximum(differences,var)
+    # max_tensor = tf.Print(max_tensor, [max_tensor], message='\nmax_tensor = ', summarize=50)#50x1  
     
     ranking_loss = K.sum(max_tensor)
+    # ranking_loss = tf.Print(ranking_loss, [ranking_loss], message='\nranking_loss = ', summarize=1)#1x1    
+
     return ranking_loss    
     
 batch_size = 25 #25 for counting and 25 for ranking
 
-#matrice usata nella pairwiseRankingHingeLoss per fare i confronti tra le 5 sottopatch di una immagine di ranking
-Block_matrix = np.zeros((10,5))
+Block_matrix = np.zeros((10,5)) # block to create the matrix M
 for i in range(0,4):
     for j in range(0,5):
         if j == 0:
@@ -62,12 +67,12 @@ Block_matrix[4:7,1:5] = Block_matrix[0:3,0:4]
 Block_matrix[7:9,2:5] = Block_matrix[0:2,0:3]        
 Block_matrix[9:10,3:5] = Block_matrix[0:1,0:2] 
 
-#numero di Block_matrix che mi servono (per ogni 5 immagini di ranking mi serve una Block_matrix)
-blocks_number = int(round(batch_size/5)) 
+blocks_number = int(round(batch_size/5)) # blocks number to create the matrix M
 blocks_list = list()
 for i in range(0,blocks_number):
     blocks_list.append(Block_matrix)
-M = block_diag(*blocks_list) #matrice usata nella pairwiseRankingHingeLoss
+M = block_diag(*blocks_list) # matrix used in pairwiseRankingHingeLoss to compare sub-patches
+# np.savetxt('Newfolder\\M_matrix.txt', M, fmt='%d')
 
 # Counting Dataset
 counting_dataset = list()
@@ -79,9 +84,10 @@ for im in glob.glob(os.path.join(counting_dataset_path, '*.jpg')):
 # Counting ground truth    
 labels = {}
 for i in range(len(counting_dataset)):
-    img = cv2.imread(counting_dataset[i])
+    img = image.load_img(counting_dataset[i])
     gt_file = counting_dataset[i].replace('.jpg','_ann.mat')
-    dmap = load_gt_from_mat(gt_file, img.shape)
+    h,w = img.size
+    dmap = load_gt_from_mat(gt_file, (w,h))
     labels[counting_dataset[i]] = dmap
 
 #Ranking Dataset    
@@ -91,7 +97,7 @@ ranking_dataset_path = 'ranking_data'
 for im in glob.glob(os.path.join(ranking_dataset_path, '*.jpg')):
     ranking_dataset.append(im)
 
-# # Design model
+# Design model
 model = VGG16(include_top=True, weights='imagenet') #include_top=False to get only the convolutional part of VGG16
 transfer_layer = model.get_layer('block5_conv3')
 conv_model = Model(inputs=[model.input], outputs=[transfer_layer.output])
@@ -102,8 +108,6 @@ x = conv_model([counting_input,ranking_input])
 #a single convolutional layer (a single 3x3x512 filter with stride 1 and zero padding to maintain same size)
 counting_output = Conv2D(1, (3, 3),strides=(1, 1), padding='same', data_format=None, dilation_rate=(1, 1), activation='relu', use_bias=True, kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=None, bias_regularizer=None, activity_regularizer=None, kernel_constraint=None, bias_constraint=None, name='counting')(x)
 ranking_output = Lambda(lambda i: 14.0 * 14.0 * i, name='ranking')(GlobalAveragePooling2D()(counting_output))
-
-# SumPooling2D(pool_size=(14, 14), strides=None, padding='valid', data_format=None, name='ranking')(counting_output)
 new_model = Model(inputs=[counting_input,ranking_input], outputs=[counting_output,ranking_output])
 new_model.summary()
 
@@ -146,18 +150,15 @@ for f in range(0,1):
     
     #counting train split
     split_train = list(flat)
+
+    #counting validation split labels
+    split_val_labels = {k: labels[k] for k in split_val}    
     
     #counting train split labels
     split_train_labels = {k: labels[k] for k in split_train}
-    
-    #counting validation split labels
-    split_val_labels = {k: labels[k] for k in split_val}
-        
-    #ranking train split
-    split_rank_train = ranking_dataset[0:50]
         
     #train
-    # new_model.fit_generator(generator=DataGenerator(split_train, split_train_labels, split_rank_train, **params), epochs=1, callbacks=[tbCallBack])
+    new_model.fit_generator(generator=DataGenerator(split_train, split_train_labels, ranking_dataset, **params), epochs=1, callbacks=[tbCallBack])
     
     #train+validation
     train_generator = DataGenerator(split_train, split_train_labels, split_rank_train, **params)
