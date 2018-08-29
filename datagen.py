@@ -153,4 +153,4 @@ class DataGenerator(tf.keras.utils.Sequence):
         y_ranking = np.zeros((self.batch_size,1,1,1)) # dummy ranking batch target
         X_counting = preprocess_input(X_counting)
         X_ranking = preprocess_input(X_ranking)
-        return {'counting_input': X_counting, 'ranking_input': X_ranking}, {'conv2d_1': y, 'average_pooling2d_1': y_ranking}
+        return {'counting_input': X_counting, 'ranking_input': X_ranking}, {'counting': y, 'ranking': y_ranking}

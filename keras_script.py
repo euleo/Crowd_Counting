@@ -12,7 +12,7 @@ import itertools
 from tensorflow.python.keras.callbacks import TensorBoard
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.models import Model, Sequential
-from tensorflow.python.keras.layers import Input, Conv2D, AveragePooling2D
+from tensorflow.python.keras.layers import Input, Conv2D, AveragePooling2D, GlobalAveragePooling2D, Lambda
 from tensorflow.python.keras.applications import VGG16
 from datagen import DataGenerator
 from tensorflow.python.keras.optimizers import SGD
@@ -35,8 +35,8 @@ def load_gt_from_mat(gt_file, gt_shape):
 def pairwiseRankingHingeLoss(yTrue,yPred):    
     kvar = K.constant(M)
 
-    yPred = K.squeeze(yPred, 3)
-    yPred = K.squeeze(yPred, 2)
+#    yPred = K.squeeze(yPred, 3)
+#    yPred = K.squeeze(yPred, 2)
     
     differences = K.dot(kvar,yPred)
     
@@ -100,27 +100,28 @@ counting_input = Input(shape=(224, 224, 3), dtype='float32', name='counting_inpu
 ranking_input = Input(shape=(224, 224, 3), dtype='float32', name='ranking_input')
 x = conv_model([counting_input,ranking_input])
 #a single convolutional layer (a single 3x3x512 filter with stride 1 and zero padding to maintain same size)
-counting_output = Conv2D(1, (3, 3),strides=(1, 1), padding='same', data_format=None, dilation_rate=(1, 1), activation='relu', use_bias=True, kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=None, bias_regularizer=None, activity_regularizer=None, kernel_constraint=None, bias_constraint=None, name='conv2d_1')(x)
-ranking_output = AveragePooling2D(pool_size=(14, 14), strides=None, padding='valid', data_format=None, name='average_pooling2d_1')(counting_output)
+counting_output = Conv2D(1, (3, 3),strides=(1, 1), padding='same', data_format=None, dilation_rate=(1, 1), activation='relu', use_bias=True, kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=None, bias_regularizer=None, activity_regularizer=None, kernel_constraint=None, bias_constraint=None, name='counting')(x)
+ranking_output = Lambda(lambda i: 14.0 * 14.0 * i, name='ranking')(GlobalAveragePooling2D()(counting_output))
+
+# SumPooling2D(pool_size=(14, 14), strides=None, padding='valid', data_format=None, name='ranking')(counting_output)
 new_model = Model(inputs=[counting_input,ranking_input], outputs=[counting_output,ranking_output])
 new_model.summary()
 
 optimizer = SGD(lr=0.000001, decay=0.0005, momentum=0.0, nesterov=False)
-loss={'conv2d_1': 'mean_squared_error', 'average_pooling2d_1': pairwiseRankingHingeLoss}
-loss_weights=[1,100]
-metrics = {'average_pooling2d_1': ['mae', 'mse']}
+loss={'counting': 'mean_squared_error', 'ranking': pairwiseRankingHingeLoss}
+loss_weights=[1.0, 1.0]
+metrics = {'ranking': ['mae', 'mse']}
 
 new_model.compile(optimizer=optimizer,
-              loss=loss,
-			  metrics=metrics,
-              loss_weights=loss_weights)
+                  loss=loss,
+                  loss_weights=loss_weights)
 
 print('##################FIT GENERATOR######################################################################')
 # Parameters
 params = {'dim': (224,224),
           'batch_size': batch_size, 
           'n_channels': 3,
-          'shuffle': False,
+          'shuffle': True,
           'rank_images': int(round(batch_size/5))} # numero di immagini di ranking da prendere per creare un batch (da ogni immagine vengono prese 5 sottopatch)
           
 split_train_labels = {}
@@ -140,11 +141,11 @@ for f in range(0,1):
     #counting validation split
     split_val = splits_list_tmp[f]
     
-    del splits_list_tmp[f]    
+    del splits_list_tmp[f]
     flat=itertools.chain.from_iterable(splits_list_tmp)
     
     #counting train split
-    split_train = list(flat)    
+    split_train = list(flat)
     
     #counting train split labels
     split_train_labels = {k: labels[k] for k in split_train}
@@ -159,4 +160,6 @@ for f in range(0,1):
     # new_model.fit_generator(generator=DataGenerator(split_train, split_train_labels, split_rank_train, **params), epochs=1, callbacks=[tbCallBack])
     
     #train+validation
-    new_model.fit_generator(generator=DataGenerator(split_train, split_train_labels, split_rank_train, **params), validation_data=DataGenerator(split_val, split_val_labels, split_rank_train, **params), epochs=1, callbacks=[tbCallBack])
+    train_generator = DataGenerator(split_train, split_train_labels, split_rank_train, **params)
+    val_generator = DataGenerator(split_val, split_val_labels, split_rank_train, **params)
+    new_model.fit_generator(generator=train_generator, epochs=10)
