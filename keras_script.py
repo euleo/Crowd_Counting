@@ -32,7 +32,7 @@ def load_gt_from_mat(gt_file, gt_shape):
         gt[int(math.floor(dot[1]))-1, int(math.floor(dot[0]))-1] = 1.0
     sigma = 15
     density_map = gaussian_filter(gt, sigma)
-    return density_map
+    return density_map, len(oct_struct)
     
 
 def pairwiseRankingHingeLoss(yTrue,yPred):
@@ -82,13 +82,15 @@ for im in glob.glob(os.path.join(counting_dataset_path, '*.jpg')):
     counting_dataset.append(im)
 
 # Counting ground truth    
-labels = {}
+train_labels = {}
+val_labels = {}
 for i in range(len(counting_dataset)):
     img = image.load_img(counting_dataset[i])
     gt_file = counting_dataset[i].replace('.jpg','_ann.mat')
     h,w = img.size
-    dmap = load_gt_from_mat(gt_file, (w,h))
-    labels[counting_dataset[i]] = dmap
+    dmap,crowd_number = load_gt_from_mat(gt_file, (w,h))
+    train_labels[counting_dataset[i]] = dmap
+    val_labels[counting_dataset[i]] = crowd_number
 
 #Ranking Dataset    
 ranking_dataset = list()
@@ -118,7 +120,6 @@ new_model.summary()
 optimizer = SGD(lr=0.000001, decay=0.0005, momentum=0.0, nesterov=False)
 loss={'counting_output': 'mean_squared_error', 'ranking_output': pairwiseRankingHingeLoss}
 loss_weights=[1.0, 0.0]
-metrics = {'ranking': ['mae', 'mse']}
 
 new_model.compile(optimizer=optimizer,
                   loss=loss,
@@ -134,6 +135,9 @@ params = {'dim': (224,224),
           
 split_train_labels = {}
 split_val_labels = {}
+
+#RANDOMIZE the order of images before splitting
+np.random.shuffle(counting_dataset)
 
 split_size = int(round(len(counting_dataset)/5))
 splits_list = list()
@@ -156,11 +160,11 @@ for f in range(0,1):
     split_train = list(flat)
 
     #counting validation split labels
-    split_val_labels = {k: labels[k] for k in split_val}    
-    
+    split_val_labels = {k: val_labels[k] for k in split_val}    
+
     # counting train split labels
-    split_train_labels = {k: labels[k] for k in split_train}
-        
+    split_train_labels = {k: train_labels[k] for k in split_train}
+    
     # train for FIVE epochs.
     train_generator = DataGenerator(split_train, split_train_labels, ranking_dataset, **params)
     new_model.fit_generator(generator=train_generator, epochs=5)
@@ -169,9 +173,33 @@ for f in range(0,1):
     # be evaluated. This is CROPPING and passing ranking images, but
     # rather you should pass ENTIRE test images and compare the
     # ranking_output with the ground truth COUNTS for each image.
-    test_generator = DataGenerator(split_val, split_val_labels, ranking_dataset, **params)
-    res = new_model.predict_generator(test_generator)
-    print('Count stats for split={}:'.format(f))
-    print(' min count: {}'.format(res[1].min()))
-    print(' max count: {}'.format(res[1].max()))
-    print(' avg count: {}'.format(res[1].mean()))
+    # test_generator = DataGenerator(split_val, split_val_labels, ranking_dataset, **params)
+    # res = new_model.predict_generator(test_generator)
+    # print('Count stats for split={}:'.format(f))
+    # print(' min count: {}'.format(res[1].min()))
+    # print(' max count: {}'.format(res[1].max()))
+    # print(' avg count: {}'.format(res[1].mean()))
+    # print(new_model.metrics_names)
+
+    X_validation = np.empty((len(split_val), 224, 224, 3))
+    y_validation = np.empty((len(split_val),1))
+    for i in range(len(split_val)):   
+        img = image.load_img(split_val[i], target_size=(224, 224))
+        img_to_array = image.img_to_array(img)
+        img_to_array = preprocess_input(img_to_array)
+        X_validation[i,] = img_to_array
+        y_validation[i] = split_val_labels[split_val[i]]
+    
+    X_dummy = np.zeros((len(split_val), 224, 224, 3))
+    y_dummy = np.zeros((len(split_val),14,14,1))
+
+    new_model.compile(optimizer=optimizer,
+                  loss={'counting_output': 'mean_squared_error','ranking_output': 'mean_squared_error'},
+                  metrics={'counting_output': 'mse','ranking_output': ['mae', 'mse']},
+                  loss_weights=loss_weights)
+                  
+    res = new_model.evaluate(x=[X_dummy,X_validation], y=[y_dummy,y_validation], batch_size=len(split_val), verbose=1, steps=None) 
+    print(new_model.metrics_names[4], end=": ") #ranking_output_mean_absolute_error
+    print(res[4])
+    print(new_model.metrics_names[5], end=": ") #ranking_output_mean_squared_error
+    print(res[5])    

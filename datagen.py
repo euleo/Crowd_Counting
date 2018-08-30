@@ -202,7 +202,7 @@ class DataGenerator(tf.keras.utils.Sequence):
                 #### uncomment to save images as png to check if they are right
                 # plt.imsave(newpath+'\\'+rank_img_name+'(5)crop_resized_array_subpatch-'+str(j)+'.png', crop_resized_array_subpatch, format="png")
                 # plt.imsave(newpath+'\\'+rank_img_name+'(6)crop_resized_array_preproc_subpatch-'+str(j)+'.png', crop_resized_array_preproc_subpatch, format="png")
-        y_ranking = np.zeros((self.batch_size,1,1,1)) # dummy ranking batch target
+        y_ranking = np.zeros((self.batch_size,1)) # dummy ranking batch target
         X_counting = preprocess_input(X_counting)
         X_ranking = preprocess_input(X_ranking)
         return {'counting_input': X_counting, 'ranking_input': X_ranking}, {'counting_output': y_counting, 'ranking_output': y_ranking}
