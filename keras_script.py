@@ -211,5 +211,5 @@ for f in range(0,1):
     tr_y = train_generator[0][1]['counting_output'].sum(1).sum(1).sum(1)
     pred_train = new_model.predict([tr_X, np.zeros((25, 224, 224, 3))])
     print('Results on FIRST TRAINING BATCH:')
-    print(' MAE: {}'.format(mae(pred_test[1], y_validation)))
-    print(' MSE: {}'.format(mse(pred_test[1], y_validation)))
+    print(' MAE: {}'.format(mae(pred_train[1], tr_y)))
+    print(' MSE: {}'.format(mse(pred_train[1], tr_y)))
