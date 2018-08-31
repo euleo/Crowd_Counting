@@ -153,7 +153,7 @@ def mae(pred, gt):
     return abs(pred - gt).mean()
 
 # 5-fold cross validation
-epochs = 20
+epochs = 5
 for f in range(0,1):
     print('Folder '+str(f))
 
@@ -201,7 +201,15 @@ for f in range(0,1):
     
     # ADB: use model.predict() to get outputs, use own code for evaluation.
     pred_test = new_model.predict([X_validation, np.zeros((10, 224, 224, 3))])
-    print('\n################')
-    print('Results:')
+    print('\n######################')
+    print('Results on TEST SPLIT:')
+    print(' MAE: {}'.format(mae(pred_test[1], y_validation)))
+    print(' MSE: {}'.format(mse(pred_test[1], y_validation)))
+
+    print('\n################################')
+    tr_X = train_generator[0][0]['counting_input']
+    tr_y = train_generator[0][1]['counting_output'].sum(1).sum(1).sum(1)
+    pred_train = new_model.predict([tr_X, np.zeros((25, 224, 224, 3))])
+    print('Results on FIRST TRAINING BATCH:')
     print(' MAE: {}'.format(mae(pred_test[1], y_validation)))
     print(' MSE: {}'.format(mse(pred_test[1], y_validation)))
