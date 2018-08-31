@@ -117,7 +117,7 @@ ranking_output = Lambda(lambda i: 14.0 * 14.0 * i, name='ranking_output')(Global
 new_model = Model(inputs=[counting_input,ranking_input], outputs=[counting_output,ranking_output])
 new_model.summary()
 
-optimizer = Adam(lr=1e-4)
+optimizer = Adam(lr=1e-5)
 loss={'counting_output': 'mean_squared_error', 'ranking_output': pairwiseRankingHingeLoss}
 loss_weights=[1.0, 0.0]
 
@@ -153,7 +153,7 @@ def mae(pred, gt):
     return abs(pred - gt).mean()
 
 # 5-fold cross validation
-epochs = 5
+epochs = 15
 for f in range(0,1):
     print('Folder '+str(f))
 
