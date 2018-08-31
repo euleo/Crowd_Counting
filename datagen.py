@@ -10,6 +10,18 @@ import os
 from tensorflow.python.keras.applications.vgg16 import preprocess_input
 from tensorflow.python.keras.preprocessing import image
 
+# ADB: New rescaling function that sum pools instead of averaging.
+def downsample(im, size):
+    rng_y = np.linspace(0, im.shape[0], size[0]+1).astype('int')
+    rng_y = list(zip(rng_y[:-1], rng_y[1:]))
+    rng_x = np.linspace(0, im.shape[1], size[1]+1).astype('int')
+    rng_x = list(zip(rng_x[:-1], rng_x[1:]))
+    res = np.zeros(size)
+    for (yi, yr) in enumerate(rng_y):
+        for (xi, xr) in enumerate(rng_x):
+            res[yi, xi] = im[yr[0]:yr[1], xr[0]:xr[1]].sum()
+    return res
+
 class DataGenerator(tf.keras.utils.Sequence):    
     'Generates data for Keras'
     def __init__(self, counting_dataset, labels, ranking_dataset, batch_size=25, dim=(224,224), n_channels=3, shuffle=True, rank_images=5):
@@ -76,19 +88,12 @@ class DataGenerator(tf.keras.utils.Sequence):
             crop_resized_array_preproc_img = preprocess_input(crop_resized_array_img)            
             X_counting[i,] = crop_resized_array_preproc_img
             
-            dmap = self.labels[image_path]            
-            crop_dmap = dmap[random_y1:random_y1+random_size, random_x1:random_x1+random_size]            
-            #resize to CNN output
+            dmap = self.labels[image_path]
+            crop_dmap = dmap[random_y1:random_y1+random_size, random_x1:random_x1+random_size]
 
-            # I need this on my machine to not use deprecated imresize. Set ADB=False if you ger an error.
-            ADB = True
-            if ADB:
-                import skimage.transform
-                y_tmp[i] = skimage.transform.resize(crop_dmap, (14,14), anti_aliasing=True)
-                y_counting[i] = np.resize(y_tmp[i],(14,14,1))
-            else:
-                y_tmp[i] = scipy.misc.imresize(crop_dmap, (14,14), interp='bilinear')           
-                y_counting[i] = np.resize(y_tmp[i],(14,14,1))
+            # ADB: I implemented a new resizing function that is used here for density maps.
+            y_tmp[i] = downsample(crop_dmap, (14, 14))
+            y_counting[i] = np.resize(y_tmp[i],(14,14,1))
 
             #### uncomment to save images as png to check if they are right 
             # newpath = 'Newfolder\\'+image_path

@@ -16,7 +16,7 @@ from tensorflow.python.keras.models import Model, Sequential
 from tensorflow.python.keras.layers import Input, Conv2D, AveragePooling2D, GlobalAveragePooling2D, Lambda
 from tensorflow.python.keras.applications import VGG16
 from datagen import DataGenerator
-from tensorflow.python.keras.optimizers import SGD
+from tensorflow.python.keras.optimizers import SGD, Adam
 from scipy.ndimage.filters import gaussian_filter 
 from scipy.linalg import block_diag
 from tensorflow.python.keras.applications.vgg16 import preprocess_input
@@ -117,7 +117,7 @@ ranking_output = Lambda(lambda i: 14.0 * 14.0 * i, name='ranking_output')(Global
 new_model = Model(inputs=[counting_input,ranking_input], outputs=[counting_output,ranking_output])
 new_model.summary()
 
-optimizer = SGD(lr=0.000001, decay=0.0005, momentum=0.0, nesterov=False)
+optimizer = Adam(lr=1e-4)
 loss={'counting_output': 'mean_squared_error', 'ranking_output': pairwiseRankingHingeLoss}
 loss_weights=[1.0, 0.0]
 
@@ -141,10 +141,19 @@ np.random.shuffle(counting_dataset)
 
 split_size = int(round(len(counting_dataset)/5))
 splits_list = list()
-for t in range(0,5):
+for t in range(5):
     splits_list.append(counting_dataset[t*split_size:t*split_size+split_size])    
 
+###########################
+# ADB: Evaluation functions
+def mse(pred, gt):
+    return np.sqrt(((pred - gt) ** 2.0).mean())
+
+def mae(pred, gt):
+    return abs(pred - gt).mean()
+
 # 5-fold cross validation
+epochs = 20
 for f in range(0,1):
     print('Folder '+str(f))
 
@@ -167,7 +176,7 @@ for f in range(0,1):
     
     # train for FIVE epochs.
     train_generator = DataGenerator(split_train, split_train_labels, ranking_dataset, **params)
-    new_model.fit_generator(generator=train_generator, epochs=5)
+    new_model.fit_generator(generator=train_generator, epochs=epochs)
 
     # Look at some outputs... Note, this is NOT how the model should
     # be evaluated. This is CROPPING and passing ranking images, but
@@ -190,16 +199,9 @@ for f in range(0,1):
         X_validation[i,] = img_to_array
         y_validation[i] = split_val_labels[split_val[i]]
     
-    X_dummy = np.zeros((len(split_val), 224, 224, 3))
-    y_dummy = np.zeros((len(split_val),14,14,1))
-
-    new_model.compile(optimizer=optimizer,
-                  loss={'counting_output': 'mean_squared_error','ranking_output': 'mean_squared_error'},
-                  metrics={'counting_output': 'mse','ranking_output': ['mae', 'mse']},
-                  loss_weights=loss_weights)
-                  
-    res = new_model.evaluate(x=[X_dummy,X_validation], y=[y_dummy,y_validation], batch_size=len(split_val), verbose=1, steps=None) 
-    print(new_model.metrics_names[4], end=": ") #ranking_output_mean_absolute_error
-    print(res[4])
-    print(new_model.metrics_names[5], end=": ") #ranking_output_mean_squared_error
-    print(res[5])    
+    # ADB: use model.predict() to get outputs, use own code for evaluation.
+    pred_test = new_model.predict([X_validation, np.zeros((10, 224, 224, 3))])
+    print('\n################')
+    print('Results:')
+    print(' MAE: {}'.format(mae(pred_test[1], y_validation)))
+    print(' MSE: {}'.format(mse(pred_test[1], y_validation)))
