@@ -1,12 +1,9 @@
 import numpy as np
 import tensorflow as tf
-import cv2
 import random
 import math
-import scipy.io
 import PIL
-import matplotlib.pyplot as plt
-import os
+
 from tensorflow.python.keras.applications.vgg16 import preprocess_input
 from tensorflow.python.keras.preprocessing import image
 
@@ -15,11 +12,11 @@ def downsample(im, size):
     rng_y = np.linspace(0, im.shape[0], size[0]+1).astype('int')
     rng_y = list(zip(rng_y[:-1], rng_y[1:]))
     rng_x = np.linspace(0, im.shape[1], size[1]+1).astype('int')
-    rng_x = list(zip(rng_x[:-1], rng_x[1:]))
+    rng_x = list(zip(rng_x[:-1], rng_x[1:]))        
     res = np.zeros(size)
     for (yi, yr) in enumerate(rng_y):
         for (xi, xr) in enumerate(rng_x):
-            res[yi, xi] = im[yr[0]:yr[1], xr[0]:xr[1]].sum()
+            res[yi, xi] = im[yr[0]:yr[1], xr[0]:xr[1]].sum()    
     return res
 
 class DataGenerator(tf.keras.utils.Sequence):    
@@ -45,7 +42,6 @@ class DataGenerator(tf.keras.utils.Sequence):
         # Generate indexes of the batch
         indexes = self.indexes[index*self.rank_images:(index+1)*self.rank_images] # indexes of the ranking images from which to generate the ranking batch
         
-        # counting_indexes = random.sample(range(0, len(self.counting_dataset)), self.batch_size)
         counting_indexes = [random.randint(0, len(self.counting_dataset)-1) for _ in range(self.batch_size)] # indexes of the counting images from which to generate the counting batch
           
         counting_dataset_temp = [self.counting_dataset[k] for k in counting_indexes]
@@ -63,11 +59,18 @@ class DataGenerator(tf.keras.utils.Sequence):
 
     def __data_generation(self, counting_dataset_temp,list_ranking_imgs_temp):
         'Generates data containing batch_size samples'
-        # Initialization
-        X_counting = np.empty((self.batch_size, *self.dim, self.n_channels)) #counting batch
-        X_ranking = np.empty((self.batch_size, *self.dim, self.n_channels)) #ranking batch
-        y_counting = np.empty((self.batch_size,14,14,1)) #counting batch target
-        y_tmp = np.empty((self.batch_size,14,14)) # to temporarily save the resized counting target
+        
+        # counting batch
+        X_counting = np.empty((self.batch_size, *self.dim, self.n_channels)) 
+        
+        # ranking batch
+        X_ranking = np.empty((self.batch_size, *self.dim, self.n_channels)) 
+        
+        # counting batch target
+        y_counting = np.empty((self.batch_size,14,14,1)) 
+        
+        # to temporarily save the resized counting target
+        y_tmp = np.empty((self.batch_size,14,14)) 
         
         #Generate counting batch
         for i, image_path in enumerate(counting_dataset_temp):
@@ -94,44 +97,21 @@ class DataGenerator(tf.keras.utils.Sequence):
             # ADB: I implemented a new resizing function that is used here for density maps.
             y_tmp[i] = downsample(crop_dmap, (14, 14))
             y_counting[i] = np.resize(y_tmp[i],(14,14,1))
-
-            #### uncomment to save images as png to check if they are right 
-            # newpath = 'Newfolder\\'+image_path
-            # if not os.path.exists(newpath):
-                # os.makedirs(newpath)            
-            # count_img_name = image_path.replace('counting_data_UCF\\','')
-            # count_img_name = count_img_name.replace('.jpg','')
-            # plt.imsave(newpath+'\\'+count_img_name+'(1)original_img.png', counting_img)
-            # plt.imsave(newpath+'\\'+count_img_name+'(2)crop_img.png', crop_img)   
-            # plt.imsave(newpath+'\\'+count_img_name+'(3)crop_resized_img.png', crop_resized_img) 
-            # plt.imsave(newpath+'\\'+count_img_name+'(4)crop_resized_array_img.png', crop_resized_array_img, format="png")
-            # plt.imsave(newpath+'\\'+count_img_name+'(5)crop_resized_array_preproc_img.png', crop_resized_array_preproc_img, format="png")
-            # plt.imsave(newpath+'\\'+count_img_name+'(6)dmap.png', dmap, cmap='jet')             
-            # plt.imsave(newpath+'\\'+count_img_name+'(7)crop_dmap.png', crop_dmap, cmap='jet') 
-            # plt.imsave(newpath+'\\'+count_img_name+'(8)y_tmp.png', y_tmp[i], cmap='jet')  
-            # plt.imsave(newpath+'\\'+count_img_name+'(9)y_counting.png', y_counting[i][:,:,0], cmap='jet')    
-
-            #### uncomment to save arrays in a text file to check if they are right            
-            # np.savetxt(newpath+'\\'+count_img_name+'(4)crop_resized_array_img0.txt',crop_resized_array_img[:,:,0])
-            # np.savetxt(newpath+'\\'+count_img_name+'(5)crop_resized_array_preproc_img0.txt',crop_resized_array_preproc_img[:,:,0])      
-            # np.savetxt(newpath+'\\'+count_img_name+'(4)crop_resized_array_img1.txt',crop_resized_array_img[:,:,1])
-            # np.savetxt(newpath+'\\'+count_img_name+'(5)crop_resized_array_preproc_img1.txt',crop_resized_array_preproc_img[:,:,1])
-            # np.savetxt(newpath+'\\'+count_img_name+'(4)crop_resized_array_img2.txt',crop_resized_array_img[:,:,2])
-            # np.savetxt(newpath+'\\'+count_img_name+'(5)crop_resized_array_preproc_img2.txt',crop_resized_array_preproc_img[:,:,2])            
-            # np.savetxt(newpath+'\\'+count_img_name+'(6)dmap.txt',dmap)
-            # np.savetxt(newpath+'\\'+count_img_name+'(7)crop_dmap.txt',crop_dmap)
-            # np.savetxt(newpath+'\\'+count_img_name+'(8)y_tmp.txt',y_tmp[i])
-            # np.savetxt(newpath+'\\'+count_img_name+'(9)y_counting.txt',y_counting[i][:,:,0])
            
-        #### ALGORITHM TO GENERATE RANKED DATASETS ####
-        k = 5 #number of patches
-        s = 0.75 #scale factor
-        r = 8  #anchor region            
+        #### ALGORITHM TO GENERATE RANKED DATASETS ####       
+        # number of patches to generate
+        k = 5 
+        
+        # scale factor
+        s = 0.75
+
+        # anchor region  
+        r = 8            
         for i, image_path in enumerate(list_ranking_imgs_temp):            
             img = image.load_img(image_path)
             width, height = img.size            
             
-            #select anchor region: crop a patch 1/r of original image centered in the same point and with same aspect ratio
+            # select anchor region: crop a patch 1/r of original image centered in the same point and with same aspect ratio
             anchor_region_width = width * math.sqrt(1/r)
             anchor_region_height = height * math.sqrt(1/r)
             
@@ -142,15 +122,12 @@ class DataGenerator(tf.keras.utils.Sequence):
             y1 = int(round(center_y - (anchor_region_height/2)))  
             x2 = int(round(center_x + (anchor_region_width/2)))
             y2 = int(round(center_y + (anchor_region_height/2)))
-            
-            #anchor region
-            # crop_img = img[y1:y2, x1:x2]
                 
-            #STEP 1: choose an anchor point ramdomly from the anchor region
+            # STEP 1: choose an anchor point ramdomly from the anchor region
             anchor_point_x = random.uniform(x1, x2)
             anchor_point_y = random.uniform(y1, y2)
             
-            #STEP 2: find the largest square patch centered at the anchor point and contained within the image boundaries
+            # STEP 2: find the largest square patch centered at the anchor point and contained within the image boundaries
             anchor_point_offset_x = width - anchor_point_x
             anchor_point_offset_y = height - anchor_point_y
             
@@ -162,7 +139,7 @@ class DataGenerator(tf.keras.utils.Sequence):
             patch1_x2 = int(round(anchor_point_x + patch1_half_width))
             patch1_y2 = int(round(anchor_point_y + patch1_half_width))
             
-            #first_patch
+            # first_patch
             crop_patch = img.crop((patch1_x1, patch1_y1, patch1_x2, patch1_y2)) 
             crop_resized_patch = crop_patch.resize((224,224),PIL.Image.BILINEAR)
             crop_resized_array_patch = image.img_to_array(crop_resized_patch)            
@@ -170,25 +147,14 @@ class DataGenerator(tf.keras.utils.Sequence):
             X_ranking[i*k,] = crop_resized_array_preproc_patch
             
             patches_list = list()
-            patches_list.append(crop_patch)
-
-            #### uncomment to save images as png to check if they are right
-            # newpath = 'Newfolder\\'+image_path
-            # if not os.path.exists(newpath):
-                # os.makedirs(newpath)
-            # rank_img_name = image_path.replace('ranking_data\\','')
-            # rank_img_name = rank_img_name.replace('.jpg','')            
-            # plt.imsave(newpath+'\\'+rank_img_name+'(1)original_img.png', img)                       
-            # plt.imsave(newpath+'\\'+rank_img_name+'(2)crop_resized_patch.png', crop_resized_patch)
-            # plt.imsave(newpath+'\\'+rank_img_name+'(3)crop_resized_array_patch.png', crop_resized_array_patch, format="png")
-            # plt.imsave(newpath+'\\'+rank_img_name+'(4)crop_resized_array_preproc_patch-1.png', crop_resized_array_preproc_patch, format="png")            
+            patches_list.append(crop_patch)            
             
             #STEP 3: Crop k-1 additional square patches, reducing size iteratively by a scale factor s. Keep all patches centered at anchor point    
             for j in range(2, k+1):
                 patch = patches_list[j-2]
                 w, h = patch.size
                 
-                crop_width = w * math.sqrt(s) #same as height
+                crop_width = w * math.sqrt(s)
                 
                 cen_x = w/2
                 cen_y = h/2
@@ -203,12 +169,7 @@ class DataGenerator(tf.keras.utils.Sequence):
                 crop_resized_array_subpatch = image.img_to_array(crop_resized_subpatch)               
                 crop_resized_array_preproc_subpatch = preprocess_input(crop_resized_array_subpatch)
                 X_ranking[(i*k)+j-1,] = crop_resized_array_preproc_subpatch
-
-                #### uncomment to save images as png to check if they are right
-                # plt.imsave(newpath+'\\'+rank_img_name+'(5)crop_resized_array_subpatch-'+str(j)+'.png', crop_resized_array_subpatch, format="png")
-                # plt.imsave(newpath+'\\'+rank_img_name+'(6)crop_resized_array_preproc_subpatch-'+str(j)+'.png', crop_resized_array_preproc_subpatch, format="png")
-        y_ranking = np.zeros((self.batch_size,1)) # dummy ranking batch target
-        X_counting = preprocess_input(X_counting)
-        X_ranking = preprocess_input(X_ranking)
+        # dummy ranking batch target        
+        y_ranking = np.zeros((self.batch_size,1)) 
         return {'counting_input': X_counting, 'ranking_input': X_ranking}, {'counting_output': y_counting, 'ranking_output': y_ranking}
 
