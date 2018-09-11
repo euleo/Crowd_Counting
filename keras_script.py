@@ -119,10 +119,13 @@ def main():
     split_train_labels = {}
     split_val_labels = {}
     
+    mae_sum = 0.0
+    mse_sum = 0.0
+    
     # 5-fold cross validation
     epochs = 5
     for f in range(0,5):
-        print('\nFolder '+str(f))
+        print('\nFold '+str(f))
         
         # Model
         model = VGG16(include_top=True, weights='imagenet') 
@@ -183,11 +186,16 @@ def main():
         
         # ADB: use model.predict() to get outputs, use own code for evaluation.
         pred_test = new_model.predict([X_validation, np.zeros((10, 224, 224, 3))])
+        mean_abs_err = mae(pred_test[1], y_validation)
+        mean_sqr_err = mse(pred_test[1], y_validation)
         print('\n######################')
         print('Results on TEST SPLIT:')
-        print(' MAE: {}'.format(mae(pred_test[1], y_validation)))
-        print(' MSE: {}'.format(mse(pred_test[1], y_validation)))
+        print(' MAE: {}'.format(mean_abs_err))
+        print(' MSE: {}'.format(mean_sqr_err))
 
+        mae_sum = mae_sum + mean_abs_err
+        mse_sum = mse_sum + mean_sqr_err
+        
         print('\n################################')
         tr_X = train_generator[0][0]['counting_input']
         tr_y = train_generator[0][1]['counting_output'].sum(1).sum(1).sum(1)
@@ -195,6 +203,10 @@ def main():
         print('Results on FIRST TRAINING BATCH:')
         print(' MAE: {}'.format(mae(pred_train[1], tr_y)))
         print(' MSE: {}'.format(mse(pred_train[1], tr_y)))
+        
+    print(' AVE MAE: {}'.format(mae_sum.mean()))
+    print(' AVE MSE: {}'.format(mse_sum.mean()))
+    
         
 if __name__ == "__main__":
     batch_size = 25
