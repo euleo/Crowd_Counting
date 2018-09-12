@@ -18,9 +18,9 @@ from scipy.linalg import block_diag
 from tensorflow.python.keras.applications.vgg16 import preprocess_input
 from tensorflow.python.keras.preprocessing import image
 from datagen import DataGenerator
-from sklearn.model_selection import StratifiedKFold
 
-tbCallBack = TensorBoard(log_dir='./Graph', histogram_freq=0, write_graph=True, write_images=True)
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# tbCallBack = TensorBoard(log_dir='./Graph', histogram_freq=0, write_graph=True, write_images=True)
 
 def load_gt_from_mat(gt_file, gt_shape):
     '''
@@ -203,9 +203,11 @@ def main():
         print('Results on FIRST TRAINING BATCH:')
         print(' MAE: {}'.format(mae(pred_train[1], tr_y)))
         print(' MSE: {}'.format(mse(pred_train[1], tr_y)))
-        
-    print(' AVE MAE: {}'.format(mae_sum.mean()))
-    print(' AVE MSE: {}'.format(mse_sum.mean()))
+    
+    print('\n################################')
+    print('Average Results on TEST SPLIT:')    
+    print(' AVE MAE: {}'.format(mae_sum/5))
+    print(' AVE MSE: {}'.format(mse_sum/5))
     
         
 if __name__ == "__main__":
