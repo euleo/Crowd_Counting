@@ -35,15 +35,14 @@ class DataGenerator(tf.keras.utils.Sequence):
 
     def __len__(self):
         'Denotes the number of batches per epoch'
-        return int(np.floor(len(self.ranking_dataset) / self.rank_images)) # rank_images is the number of ranking images to take to create a ranking batch generating 5 sub-patches from each one
+        return int(np.floor(len(self.ranking_dataset) / self.rank_images))
 
     def __getitem__(self, index):
         'Generate one batch of data'
         # Generate indexes of the batch
-        indexes = self.indexes[index*self.rank_images:(index+1)*self.rank_images] # indexes of the ranking images from which to generate the ranking batch
+        indexes = self.indexes[index*self.rank_images:(index+1)*self.rank_images]       
+        counting_indexes = random.sample(range(0, len(self.counting_dataset)), self.batch_size)    
         
-        counting_indexes = [random.randint(0, len(self.counting_dataset)-1) for _ in range(self.batch_size)] # indexes of the counting images from which to generate the counting batch
-          
         counting_dataset_temp = [self.counting_dataset[k] for k in counting_indexes]
         list_ranking_imgs_temp = [self.ranking_dataset[k] for k in indexes] 
 
@@ -53,7 +52,7 @@ class DataGenerator(tf.keras.utils.Sequence):
 
     def on_epoch_end(self):
         'Updates indexes after each epoch'
-        self.indexes = np.arange(len(self.ranking_dataset)) #inizializza sel.indexes
+        self.indexes = np.arange(len(self.ranking_dataset))
         if self.shuffle == True:
             np.random.shuffle(self.indexes)
 
