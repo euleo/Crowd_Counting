@@ -172,4 +172,3 @@ class DataGenerator(tf.keras.utils.Sequence):
         # dummy ranking batch target        
         y_ranking = np.zeros((self.batch_size,1)) 
         return {'counting_input': X_counting, 'ranking_input': X_ranking}, {'counting_output': y_counting, 'ranking_output': y_ranking}
-

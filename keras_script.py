@@ -53,7 +53,11 @@ def pairwiseRankingHingeLoss(yTrue,yPred):
     zeros_tensor = K.zeros(shape=(50, 1))    
     max_tensor = K.maximum(differences,zeros_tensor)    
     ranking_loss = K.sum(max_tensor)
-    return ranking_loss    
+    return ranking_loss  
+
+def euclideanDistanceCountingLoss(yTrue,yPred):   
+    counting_loss = K.mean(K.square(yPred - yTrue), axis=None, keepdims=False)
+    return counting_loss    
     
 def createMatrixForLoss(batch_size):
     '''
@@ -124,7 +128,8 @@ def main():
     
     # 5-fold cross validation
     epochs = 5
-    for f in range(0,5):
+    n_fold = 5
+    for f in range(0,n_fold):
         print('\nFold '+str(f))
         
         # Model
@@ -147,7 +152,7 @@ def main():
         # new_model.summary()
         
         optimizer = Adam(lr=1e-5)
-        loss={'counting_output': 'mean_squared_error', 'ranking_output': pairwiseRankingHingeLoss}
+        loss={'counting_output': euclideanDistanceCountingLoss, 'ranking_output': pairwiseRankingHingeLoss}
         loss_weights=[1.0, 0.0]
         
         new_model.compile(optimizer=optimizer,
@@ -206,9 +211,8 @@ def main():
     
     print('\n################################')
     print('Average Results on TEST SPLIT:')    
-    print(' AVE MAE: {}'.format(mae_sum/5))
-    print(' AVE MSE: {}'.format(mse_sum/5))
-    
+    print(' AVE MAE: {}'.format(mae_sum/n_fold))
+    print(' AVE MSE: {}'.format(mse_sum/n_fold))
         
 if __name__ == "__main__":
     batch_size = 25
