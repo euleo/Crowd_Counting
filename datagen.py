@@ -41,7 +41,8 @@ class DataGenerator(tf.keras.utils.Sequence):
         'Generate one batch of data'
         # Generate indexes of the batch
         indexes = self.indexes[index*self.rank_images:(index+1)*self.rank_images]       
-        counting_indexes = random.sample(range(0, len(self.counting_dataset)), self.batch_size)    
+        counting_indexes = random.sample(range(0, len(self.counting_dataset)), self.batch_size)   
+        
         
         counting_dataset_temp = [self.counting_dataset[k] for k in counting_indexes]
         list_ranking_imgs_temp = [self.ranking_dataset[k] for k in indexes] 

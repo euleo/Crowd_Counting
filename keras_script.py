@@ -126,7 +126,7 @@ def main():
     mse_sum = 0.0
     
     # 5-fold cross validation
-    epochs = 5
+    epochs = 400
     n_fold = 5
     for f in range(0,n_fold):
         print('\nFold '+str(f))
@@ -176,7 +176,7 @@ def main():
         split_train_labels = {k: train_labels[k] for k in split_train}        
         
         # train for FIVE epochs.
-        train_generator = DataGenerator(split_train, split_train_labels, ranking_dataset, **params)
+        train_generator = DataGenerator(split_train, split_train_labels, ranking_dataset[0:5], **params)
         new_model.fit_generator(generator=train_generator, epochs=epochs)
 
         X_validation = np.empty((len(split_val), 224, 224, 3))
