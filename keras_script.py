@@ -7,7 +7,7 @@ import math
 import random
 import itertools
 
-from tensorflow.python.keras.callbacks import TensorBoard
+from tensorflow.python.keras.callbacks import TensorBoard, LearningRateScheduler
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.models import Model
 from tensorflow.python.keras.layers import Input, Conv2D, GlobalAveragePooling2D, Lambda
@@ -18,8 +18,9 @@ from scipy.linalg import block_diag
 from tensorflow.python.keras.applications.vgg16 import preprocess_input
 from tensorflow.python.keras.preprocessing import image
 from datagen import DataGenerator
+from tensorflow.python.keras import regularizers
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+#os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 # tbCallBack = TensorBoard(log_dir='./Graph', histogram_freq=0, write_graph=True, write_images=True)
 
 def load_gt_from_mat(gt_file, gt_shape):
@@ -89,6 +90,14 @@ def mse(pred, gt):
 
 def mae(pred, gt):
     return abs(pred - gt).mean()
+    
+# learning rate schedule
+def step_decay(epoch):
+    initial_lrate = 1e-5
+    drop = 0.1
+    epochs_drop = 200.0
+    lrate = initial_lrate * math.pow(drop, math.floor((1+epoch)/epochs_drop))
+    return lrate
 
 def main():
     # Counting Dataset
@@ -133,10 +142,13 @@ def main():
         
         # Model
         model = VGG16(include_top=True, weights='imagenet') 
-        # model.summary()
         transfer_layer = model.get_layer('block5_conv3')
         conv_model = Model(inputs=[model.input], outputs=[transfer_layer.output])
-        # conv_model.summary()
+        
+        # l2 weight decay
+        for layer in conv_model.layers:
+            if hasattr(layer, 'kernel_regularizer'):
+                layer.kernel_regularizer = regularizers.l2(5e-4)
         
         counting_input = Input(shape=(224, 224, 3), dtype='float32', name='counting_input')
         ranking_input = Input(shape=(224, 224, 3), dtype='float32', name='ranking_input')
@@ -148,9 +160,13 @@ def main():
         # this.
         ranking_output = Lambda(lambda i: 14.0 * 14.0 * i, name='ranking_output')(GlobalAveragePooling2D()(counting_output))
         new_model = Model(inputs=[counting_input,ranking_input], outputs=[counting_output,ranking_output])
-        # new_model.summary()
-        
-        optimizer = Adam(lr=1e-5)
+
+        # l2 weight decay
+        for layer in new_model.layers:
+            if hasattr(layer, 'kernel_regularizer'):
+                layer.kernel_regularizer = regularizers.l2(5e-4)
+                
+        optimizer = Adam(lr=0.0)
         loss={'counting_output': euclideanDistanceCountingLoss, 'ranking_output': pairwiseRankingHingeLoss}
         loss_weights=[1.0, 0.0]
         
@@ -177,7 +193,9 @@ def main():
         
         # train for FIVE epochs.
         train_generator = DataGenerator(split_train, split_train_labels, ranking_dataset[0:5], **params)
-        new_model.fit_generator(generator=train_generator, epochs=epochs)
+        lrate = LearningRateScheduler(step_decay)
+        callbacks_list = [lrate]
+        new_model.fit_generator(generator=train_generator, epochs=epochs, callbacks=callbacks_list)
 
         X_validation = np.empty((len(split_val), 224, 224, 3))
         y_validation = np.empty((len(split_val),1))
