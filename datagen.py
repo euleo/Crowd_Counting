@@ -43,12 +43,12 @@ class DataGenerator(tf.keras.utils.Sequence):
         indexes = self.indexes[index*self.rank_images:(index+1)*self.rank_images]       
         counting_indexes = random.sample(range(0, len(self.counting_dataset)), self.batch_size)   
         
-        
         counting_dataset_temp = [self.counting_dataset[k] for k in counting_indexes]
+        labels_temp = [self.labels[k] for k in counting_indexes]
         list_ranking_imgs_temp = [self.ranking_dataset[k] for k in indexes] 
 
         # Generate data
-        X, y = self.__data_generation(counting_dataset_temp,list_ranking_imgs_temp)
+        X, y = self.__data_generation(counting_dataset_temp,labels_temp,list_ranking_imgs_temp)
         return X, y
 
     def on_epoch_end(self):
@@ -57,7 +57,7 @@ class DataGenerator(tf.keras.utils.Sequence):
         if self.shuffle == True:
             np.random.shuffle(self.indexes)
 
-    def __data_generation(self, counting_dataset_temp,list_ranking_imgs_temp):
+    def __data_generation(self, counting_dataset_temp,labels_temp,list_ranking_imgs_temp):
         'Generates data containing batch_size samples'
         
         # counting batch
@@ -73,8 +73,7 @@ class DataGenerator(tf.keras.utils.Sequence):
         y_tmp = np.empty((self.batch_size,14,14)) 
         
         #Generate counting batch
-        for i, image_path in enumerate(counting_dataset_temp):
-            counting_img = image.load_img(image_path)            
+        for i, counting_img in enumerate(counting_dataset_temp):
             width, height = counting_img.size              
             
             ####From PAPER: During training we sample one sub-image from each training image per epoch
@@ -91,7 +90,7 @@ class DataGenerator(tf.keras.utils.Sequence):
             crop_resized_array_preproc_img = preprocess_input(crop_resized_array_img)            
             X_counting[i,] = crop_resized_array_preproc_img
             
-            dmap = self.labels[image_path]
+            dmap = labels_temp[i]
             crop_dmap = dmap[random_y1:random_y1+random_size, random_x1:random_x1+random_size]
 
             # ADB: I implemented a new resizing function that is used here for density maps.

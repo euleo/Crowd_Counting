@@ -6,6 +6,8 @@ import scipy.io
 import math     
 import random
 import itertools
+import PIL
+import time
 
 from tensorflow.python.keras.callbacks import TensorBoard, LearningRateScheduler
 from tensorflow.python.keras import backend as K
@@ -93,11 +95,45 @@ def mae(pred, gt):
     
 # learning rate schedule
 def step_decay(epoch):
-    initial_lrate = 1e-5
+    initial_lrate = 1e-6
     drop = 0.1
-    epochs_drop = 200.0
+    epochs_drop = 10000.0
     lrate = initial_lrate * math.pow(drop, math.floor((1+epoch)/epochs_drop))
     return lrate
+    
+def downsample(im, size):
+    rng_y = np.linspace(0, im.shape[0], size[0]+1).astype('int')
+    rng_y = list(zip(rng_y[:-1], rng_y[1:]))
+    rng_x = np.linspace(0, im.shape[1], size[1]+1).astype('int')
+    rng_x = list(zip(rng_x[:-1], rng_x[1:]))        
+    res = np.zeros(size)
+    for (yi, yr) in enumerate(rng_y):
+        for (xi, xr) in enumerate(rng_x):
+            res[yi, xi] = im[yr[0]:yr[1], xr[0]:xr[1]].sum()    
+    return res
+    
+def multiscale_pyramid(images, labels, start=0.7, end=1.1):
+    print('Creating scale pyramid...')
+    interval = np.linspace(start, end, 5)
+    images_pyramids = {}
+    labels_pyramids = {}
+    for i, imgpath in enumerate(images):
+        img = image.load_img(imgpath)
+        pyramid_images = []
+        pyramid_labels = []
+        for scale in interval:
+            w, h = img.size
+            
+            new_w = int(round(w*scale))
+            new_h = int(round(h*scale))
+            resized_img = img.resize((new_w,new_h),PIL.Image.BILINEAR)
+            pyramid_images.append(resized_img)
+            
+            resized_gt = downsample(labels[imgpath], (new_h,new_w))
+            pyramid_labels.append(resized_gt)
+        images_pyramids[imgpath] = pyramid_images
+        labels_pyramids[imgpath] = pyramid_labels
+    return (images_pyramids, labels_pyramids)
 
 def main():
     # Counting Dataset
@@ -113,6 +149,8 @@ def main():
         dmap,crowd_number = load_gt_from_mat(gt_file, (w,h))
         train_labels[im_path] = dmap
         val_labels[im_path] = crowd_number
+    counting_dataset_pyramid, train_labels_pyramid = multiscale_pyramid(counting_dataset, train_labels)
+    print("Took %f seconds" % (time.time() - s))
 
     # Ranking Dataset  
     ranking_dataset_path = 'ranking_data'  
@@ -128,14 +166,14 @@ def main():
     for t in range(5):
         splits_list.append(counting_dataset[t*split_size:t*split_size+split_size])    
 
-    split_train_labels = {}
+    # split_train_labels = {}
     split_val_labels = {}
     
     mae_sum = 0.0
     mse_sum = 0.0
     
     # 5-fold cross validation
-    epochs = 400
+    epochs = 20000
     n_fold = 5
     for f in range(0,n_fold):
         print('\nFold '+str(f))
@@ -166,7 +204,7 @@ def main():
             if hasattr(layer, 'kernel_regularizer'):
                 layer.kernel_regularizer = regularizers.l2(5e-4)
                 
-        optimizer = Adam(lr=0.0)
+        optimizer = SGD(lr=0.0, decay=0.0, momentum=0.0, nesterov=False)
         loss={'counting_output': euclideanDistanceCountingLoss, 'ranking_output': pairwiseRankingHingeLoss}
         loss_weights=[1.0, 0.0]
         
@@ -186,13 +224,25 @@ def main():
         split_train = list(flat)
 
         # counting validation split labels
-        split_val_labels = {k: val_labels[k] for k in split_val}    
-
-        # counting train split labels
-        split_train_labels = {k: train_labels[k] for k in split_train}        
+        split_val_labels = {k: val_labels[k] for k in split_val}            
+                
+        counting_dataset_pyramid_split = []
+        train_labels_pyramid_split = []
+        for key in split_train:
+            counting_dataset_pyramid_split.append(counting_dataset_pyramid[key][0])
+            counting_dataset_pyramid_split.append(counting_dataset_pyramid[key][1])
+            counting_dataset_pyramid_split.append(counting_dataset_pyramid[key][2])
+            counting_dataset_pyramid_split.append(counting_dataset_pyramid[key][3])
+            counting_dataset_pyramid_split.append(counting_dataset_pyramid[key][4])
+            
+            train_labels_pyramid_split.append(train_labels_pyramid[key][0])
+            train_labels_pyramid_split.append(train_labels_pyramid[key][1])
+            train_labels_pyramid_split.append(train_labels_pyramid[key][2])
+            train_labels_pyramid_split.append(train_labels_pyramid[key][3])
+            train_labels_pyramid_split.append(train_labels_pyramid[key][4])
         
         # train for FIVE epochs.
-        train_generator = DataGenerator(split_train, split_train_labels, ranking_dataset[0:5], **params)
+        train_generator = DataGenerator(counting_dataset_pyramid_split, train_labels_pyramid_split, ranking_dataset[0:5], **params)
         lrate = LearningRateScheduler(step_decay)
         callbacks_list = [lrate]
         new_model.fit_generator(generator=train_generator, epochs=epochs, callbacks=callbacks_list)
@@ -225,13 +275,16 @@ def main():
         print('Results on FIRST TRAINING BATCH:')
         print(' MAE: {}'.format(mae(pred_train[1], tr_y)))
         print(' MSE: {}'.format(mse(pred_train[1], tr_y)))
+        print("Took %f seconds" % (time.time() - s))
     
     print('\n################################')
     print('Average Results on TEST SPLIT:')    
     print(' AVE MAE: {}'.format(mae_sum/n_fold))
     print(' AVE MSE: {}'.format(mse_sum/n_fold))
+    print("Took %f seconds" % (time.time() - s))
         
 if __name__ == "__main__":
+    s = time.time()
     batch_size = 25
     M = createMatrixForLoss(batch_size)    
     params = {'dim': (224,224),
