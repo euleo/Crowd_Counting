@@ -22,7 +22,7 @@ from tensorflow.python.keras.preprocessing import image
 from datagen import DataGenerator
 from tensorflow.python.keras import regularizers
 
-#os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 # tbCallBack = TensorBoard(log_dir='./Graph', histogram_freq=0, write_graph=True, write_images=True)
 
 def load_gt_from_mat(gt_file, gt_shape):
@@ -32,7 +32,6 @@ def load_gt_from_mat(gt_file, gt_shape):
     @param: gt_shape: density map shape.
     @return: density map and number of points for the input matlab file.
     '''
-    
     gt = np.zeros(gt_shape, dtype='float32')
     mat_contents = scipy.io.loadmat(gt_file)
     dots = mat_contents['annPoints']
@@ -49,16 +48,17 @@ def pairwiseRankingHingeLoss(yTrue,yPred):
         @param yPred: net predictions for ranking output.
         @return: pairwise ranking hinge loss for ranking output.
     '''
-    
     M_tensor = K.constant(M)
-    differences = K.dot(M_tensor,yPred)    
+    differences = K.dot(M_tensor,yPred)
     zeros_tensor = K.zeros(shape=(50, 1))    
     max_tensor = K.maximum(differences,zeros_tensor)    
     ranking_loss = K.sum(max_tensor)
     return ranking_loss  
 
 def euclideanDistanceCountingLoss(yTrue,yPred):   
-    counting_loss = K.mean(K.square(yPred - yTrue), axis=None, keepdims=False)
+    subtraction = yTrue - yPred
+    sq = K.square(subtraction)
+    counting_loss = K.mean(sq, axis=None, keepdims=False)
     return counting_loss    
     
 def createMatrixForLoss(batch_size):
@@ -66,8 +66,7 @@ def createMatrixForLoss(batch_size):
         @brief: This function creates the matrix used in pairwiseRankingHingeLoss to compare ranking sub-patches.
         @param batch_size: number of samples for a batch.
         @return: matrix to compare ranking sub-patches.
-    '''
-    
+    '''    
     block = np.zeros((10,5)) 
     for i in range(0,4):
         for j in range(0,5):
@@ -97,7 +96,7 @@ def mae(pred, gt):
 def step_decay(epoch):
     initial_lrate = 1e-6
     drop = 0.1
-    epochs_drop = 10000.0
+    epochs_drop = int(round((20000/8)/2))
     lrate = initial_lrate * math.pow(drop, math.floor((1+epoch)/epochs_drop))
     return lrate
     
@@ -118,14 +117,15 @@ def multiscale_pyramid(images, labels, start=0.7, end=1.1):
     images_pyramids = {}
     labels_pyramids = {}
     for i, imgpath in enumerate(images):
+        print(i, imgpath)
         img = image.load_img(imgpath)
         pyramid_images = []
         pyramid_labels = []
         for scale in interval:
             w, h = img.size
             
-            new_w = int(round(w*scale))
-            new_h = int(round(h*scale))
+            new_w = int(round(w*math.sqrt(scale)))
+            new_h = int(round(h*math.sqrt(scale)))
             resized_img = img.resize((new_w,new_h),PIL.Image.BILINEAR)
             pyramid_images.append(resized_img)
             
@@ -173,7 +173,7 @@ def main():
     mse_sum = 0.0
     
     # 5-fold cross validation
-    epochs = 20000
+    epochs = int(round(20000/8))
     n_fold = 5
     for f in range(0,n_fold):
         print('\nFold '+str(f))
@@ -198,6 +198,7 @@ def main():
         # this.
         ranking_output = Lambda(lambda i: 14.0 * 14.0 * i, name='ranking_output')(GlobalAveragePooling2D()(counting_output))
         new_model = Model(inputs=[counting_input,ranking_input], outputs=[counting_output,ranking_output])
+        new_model.summary()
 
         # l2 weight decay
         for layer in new_model.layers:
@@ -207,7 +208,6 @@ def main():
         optimizer = SGD(lr=0.0, decay=0.0, momentum=0.0, nesterov=False)
         loss={'counting_output': euclideanDistanceCountingLoss, 'ranking_output': pairwiseRankingHingeLoss}
         loss_weights=[1.0, 0.0]
-        
         new_model.compile(optimizer=optimizer,
                         loss=loss,
                         loss_weights=loss_weights)                      
@@ -240,9 +240,16 @@ def main():
             train_labels_pyramid_split.append(train_labels_pyramid[key][2])
             train_labels_pyramid_split.append(train_labels_pyramid[key][3])
             train_labels_pyramid_split.append(train_labels_pyramid[key][4])
+            
+        index_shuf = np.arange(len(counting_dataset_pyramid_split))
+        np.random.shuffle(index_shuf)
+        counting_dataset_pyramid_split_shuf = []
+        train_labels_pyramid_split_shuf = []
+        for i in index_shuf:
+            counting_dataset_pyramid_split_shuf.append(counting_dataset_pyramid_split[i])
+            train_labels_pyramid_split_shuf.append(train_labels_pyramid_split[i])
         
-        # train for FIVE epochs.
-        train_generator = DataGenerator(counting_dataset_pyramid_split, train_labels_pyramid_split, ranking_dataset[0:5], **params)
+        train_generator = DataGenerator(counting_dataset_pyramid_split_shuf, train_labels_pyramid_split_shuf, ranking_dataset, **params)
         lrate = LearningRateScheduler(step_decay)
         callbacks_list = [lrate]
         new_model.fit_generator(generator=train_generator, epochs=epochs, callbacks=callbacks_list)
@@ -286,7 +293,7 @@ def main():
 if __name__ == "__main__":
     s = time.time()
     batch_size = 25
-    M = createMatrixForLoss(batch_size)    
+    M = createMatrixForLoss(batch_size)
     params = {'dim': (224,224),
               'batch_size': batch_size, 
               'n_channels': 3,
