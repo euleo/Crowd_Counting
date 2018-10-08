@@ -53,13 +53,13 @@ def pairwiseRankingHingeLoss(yTrue,yPred):
     M_tensor = K.constant(M)
     differences = K.dot(M_tensor,yPred)    
     zeros_tensor = K.zeros(shape=(50, 1))    
-    max_tensor = K.maximum(differences,zeros_tensor)    
+    max_tensor = K.maximum(differences, 0)
     ranking_loss = K.sum(max_tensor)
     return ranking_loss  
 
-def euclideanDistanceCountingLoss(yTrue,yPred):   
-    counting_loss = K.mean(K.square(yPred - yTrue), axis=None, keepdims=False)
-    return counting_loss    
+def euclideanDistanceCountingLoss(yTrue,yPred):
+    counting_loss = K.sum(K.square(yPred - yTrue), axis=None, keepdims=False)
+    return counting_loss
     
 def createMatrixForLoss(batch_size):
     '''
@@ -111,28 +111,47 @@ def downsample(im, size):
         for (xi, xr) in enumerate(rng_x):
             res[yi, xi] = im[yr[0]:yr[1], xr[0]:xr[1]].sum()    
     return res
-    
+
+from os.path import isfile
+from pickle import dump, load
+def pickle(fname, obj):
+    with open(fname, 'wb') as fd:
+        dump(obj, fd)
+
+def unpickle(fname):
+    with open(fname, 'rb') as fd:
+        r = load(fd)
+    return r
+
 def multiscale_pyramid(images, labels, start=0.7, end=1.1):
-    print('Creating scale pyramid...')
-    interval = np.linspace(start, end, 5)
-    images_pyramids = {}
-    labels_pyramids = {}
-    for i, imgpath in enumerate(images):
-        img = image.load_img(imgpath)
-        pyramid_images = []
-        pyramid_labels = []
-        for scale in interval:
-            w, h = img.size
+    if isfile('images_pyramids.pkl'):
+        print('Loading cached scale pyramid...')
+        images_pyramids = unpickle('images_pyramids.pkl')
+        labels_pyramids = unpickle('labels_pyramids.pkl')
+
+    else:
+        print('Creating scale pyramid...')
+        interval = np.linspace(start, end, 5)
+        images_pyramids = {}
+        labels_pyramids = {}
+        for i, imgpath in enumerate(images):
+            img = image.load_img(imgpath)
+            pyramid_images = []
+            pyramid_labels = []
+            for scale in interval:
+                w, h = img.size
+                
+                new_w = int(round(w*scale))
+                new_h = int(round(h*scale))
+                resized_img = img.resize((new_w,new_h),PIL.Image.BILINEAR)
+                pyramid_images.append(resized_img)
             
-            new_w = int(round(w*scale))
-            new_h = int(round(h*scale))
-            resized_img = img.resize((new_w,new_h),PIL.Image.BILINEAR)
-            pyramid_images.append(resized_img)
-            
-            resized_gt = downsample(labels[imgpath], (new_h,new_w))
-            pyramid_labels.append(resized_gt)
-        images_pyramids[imgpath] = pyramid_images
-        labels_pyramids[imgpath] = pyramid_labels
+                resized_gt = downsample(labels[imgpath], (new_h,new_w))
+                pyramid_labels.append(resized_gt)
+            images_pyramids[imgpath] = pyramid_images
+            labels_pyramids[imgpath] = pyramid_labels
+        pickle('images_pyramids.pkl', images_pyramids)
+        pickle('labels_pyramids.pkl', labels_pyramids)
     return (images_pyramids, labels_pyramids)
 
 def main():
@@ -152,7 +171,7 @@ def main():
     counting_dataset_pyramid, train_labels_pyramid = multiscale_pyramid(counting_dataset, train_labels)
     print("Took %f seconds" % (time.time() - s))
 
-    # Ranking Dataset  
+    # Ranking Dataset
     ranking_dataset_path = 'ranking_data'  
     ranking_dataset = list()
     for im_path in glob.glob(os.path.join(ranking_dataset_path, '*.jpg')):
@@ -173,25 +192,41 @@ def main():
     mse_sum = 0.0
     
     # 5-fold cross validation
-    epochs = 20000
-    n_fold = 5
-    for f in range(0,n_fold):
+    epochs = 500
+    n_fold = 1
+    for f in range(0, n_fold):
         print('\nFold '+str(f))
         
         # Model
-        model = VGG16(include_top=True, weights='imagenet') 
+        model = VGG16(include_top=False, weights='imagenet') 
         transfer_layer = model.get_layer('block5_conv3')
         conv_model = Model(inputs=[model.input], outputs=[transfer_layer.output])
         
         # l2 weight decay
-        for layer in conv_model.layers:
-            if hasattr(layer, 'kernel_regularizer'):
-                layer.kernel_regularizer = regularizers.l2(5e-4)
+        # for layer in conv_model.layers:
+        #     layer.trainble = False
+        #     if hasattr(layer, 'kernel_regularizer'):
+        #         print('Adding weight decay: {}'.format(layer))
+        #         layer.kernel_regularizer = regularizers.l2(5e-4)
         
         counting_input = Input(shape=(224, 224, 3), dtype='float32', name='counting_input')
         ranking_input = Input(shape=(224, 224, 3), dtype='float32', name='ranking_input')
-        x = conv_model([counting_input,ranking_input])
-        counting_output = Conv2D(1, (3, 3),strides=(1, 1), padding='same', data_format=None, dilation_rate=(1, 1), activation='relu', use_bias=True, kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=None, bias_regularizer=None, activity_regularizer=None, kernel_constraint=None, bias_constraint=None, name='counting_output')(x)
+        x = conv_model([counting_input, ranking_input])
+        counting_output = Conv2D(1, (3, 3),
+                                 strides=(1, 1),
+                                 padding='same',
+#                                 data_format=None,
+#                                 dilation_rate=(1, 1),
+                                 activation='relu',
+                                 use_bias=True,
+                                 kernel_initializer='glorot_uniform',
+                                 bias_initializer='zeros',
+#                                 kernel_regularizer=None,
+#                                 bias_regularizer=None,
+#                                 activity_regularizer=None,
+#                                 kernel_constraint=None,
+#                                 bias_constraint=None,
+                                 name='counting_output')(x)
         
         # The ranking output is computed using SUM pool. Here I use
         # GlobalAveragePooling2D followed by a multiplication by 14^2 to do
@@ -200,17 +235,18 @@ def main():
         new_model = Model(inputs=[counting_input,ranking_input], outputs=[counting_output,ranking_output])
 
         # l2 weight decay
-        for layer in new_model.layers:
-            if hasattr(layer, 'kernel_regularizer'):
-                layer.kernel_regularizer = regularizers.l2(5e-4)
+        # for layer in new_model.layers:
+        #     if hasattr(layer, 'kernel_regularizer'):
+        #         layer.kernel_regularizer = regularizers.l2(5e-4)
                 
-        optimizer = SGD(lr=0.0, decay=0.0, momentum=0.0, nesterov=False)
+        # optimizer = SGD(lr=1e-9, decay=5e-4, momentum=0.0, nesterov=False)
+        optimizer = Adam(lr=1e-8, decay=5e-4)
         loss={'counting_output': euclideanDistanceCountingLoss, 'ranking_output': pairwiseRankingHingeLoss}
-        loss_weights=[1.0, 0.0]
+        loss_weights=[1.0, 100.0]
         
         new_model.compile(optimizer=optimizer,
-                        loss=loss,
-                        loss_weights=loss_weights)                      
+                          loss=loss,
+                          loss_weights=loss_weights)
 
         splits_list_tmp = splits_list.copy()
         
@@ -224,7 +260,7 @@ def main():
         split_train = list(flat)
 
         # counting validation split labels
-        split_val_labels = {k: val_labels[k] for k in split_val}            
+        split_val_labels = {k: val_labels[k] for k in split_val}
                 
         counting_dataset_pyramid_split = []
         train_labels_pyramid_split = []
@@ -245,7 +281,7 @@ def main():
         train_generator = DataGenerator(counting_dataset_pyramid_split, train_labels_pyramid_split, ranking_dataset[0:5], **params)
         lrate = LearningRateScheduler(step_decay)
         callbacks_list = [lrate]
-        new_model.fit_generator(generator=train_generator, epochs=epochs, callbacks=callbacks_list)
+        new_model.fit_generator(generator=train_generator, epochs=epochs)
 
         X_validation = np.empty((len(split_val), 224, 224, 3))
         y_validation = np.empty((len(split_val),1))
@@ -260,6 +296,7 @@ def main():
         pred_test = new_model.predict([X_validation, np.zeros((10, 224, 224, 3))])
         mean_abs_err = mae(pred_test[1], y_validation)
         mean_sqr_err = mse(pred_test[1], y_validation)
+        
         print('\n######################')
         print('Results on TEST SPLIT:')
         print(' MAE: {}'.format(mean_abs_err))
@@ -276,7 +313,8 @@ def main():
         print(' MAE: {}'.format(mae(pred_train[1], tr_y)))
         print(' MSE: {}'.format(mse(pred_train[1], tr_y)))
         print("Took %f seconds" % (time.time() - s))
-    
+        import ipdb; ipdb.set_trace()
+        
     print('\n################################')
     print('Average Results on TEST SPLIT:')    
     print(' AVE MAE: {}'.format(mae_sum/n_fold))
@@ -285,7 +323,7 @@ def main():
         
 if __name__ == "__main__":
     s = time.time()
-    batch_size = 25
+    batch_size = 15
     M = createMatrixForLoss(batch_size)    
     params = {'dim': (224,224),
               'batch_size': batch_size, 
