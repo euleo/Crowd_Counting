@@ -8,10 +8,12 @@ import random
 import itertools
 import PIL
 import time
+import datetime
+import matplotlib.pyplot as plt
 
 from tensorflow.python.keras.callbacks import TensorBoard, LearningRateScheduler
 from tensorflow.python.keras import backend as K
-from tensorflow.python.keras.models import Model
+from tensorflow.python.keras.models import Model, load_model
 from tensorflow.python.keras.layers import Input, Conv2D, GlobalAveragePooling2D, Lambda
 from tensorflow.python.keras.applications import VGG16
 from tensorflow.python.keras.optimizers import SGD, Adam
@@ -23,7 +25,6 @@ from datagen import DataGenerator
 from tensorflow.python.keras import regularizers
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-# tbCallBack = TensorBoard(log_dir='./Graph', histogram_freq=0, write_graph=True, write_images=True)
 
 def load_gt_from_mat(gt_file, gt_shape):
     '''
@@ -111,28 +112,47 @@ def downsample(im, size):
             res[yi, xi] = im[yr[0]:yr[1], xr[0]:xr[1]].sum()    
     return res
     
+from os.path import isfile
+from pickle import dump, load
+def pickle(fname, obj):
+    with open(fname, 'wb') as fd:
+        dump(obj, fd)
+
+def unpickle(fname):
+    with open(fname, 'rb') as fd:
+        r = load(fd)
+    return r
+
 def multiscale_pyramid(images, labels, start=0.7, end=1.1):
-    print('Creating scale pyramid...')
-    interval = np.linspace(start, end, 5)
-    images_pyramids = {}
-    labels_pyramids = {}
-    for i, imgpath in enumerate(images):
-        print(i, imgpath)
-        img = image.load_img(imgpath)
-        pyramid_images = []
-        pyramid_labels = []
-        for scale in interval:
-            w, h = img.size
+    if isfile('images_pyramids.pkl'):
+        print('Loading cached scale pyramid...')
+        images_pyramids = unpickle('images_pyramids.pkl')
+        labels_pyramids = unpickle('labels_pyramids.pkl')
+
+    else:
+        print('Creating scale pyramid...')
+        interval = np.linspace(start, end, 5)
+        images_pyramids = {}
+        labels_pyramids = {}
+        for i, imgpath in enumerate(images):
+            print(i,imgpath)
+            img = image.load_img(imgpath)
+            pyramid_images = []
+            pyramid_labels = []
+            for scale in interval:
+                w, h = img.size
+                
+                new_w = int(round(w*math.sqrt(scale)))
+                new_h = int(round(h*math.sqrt(scale)))
+                resized_img = img.resize((new_w,new_h),PIL.Image.BILINEAR)
+                pyramid_images.append(resized_img)
             
-            new_w = int(round(w*math.sqrt(scale)))
-            new_h = int(round(h*math.sqrt(scale)))
-            resized_img = img.resize((new_w,new_h),PIL.Image.BILINEAR)
-            pyramid_images.append(resized_img)
-            
-            resized_gt = downsample(labels[imgpath], (new_h,new_w))
-            pyramid_labels.append(resized_gt)
-        images_pyramids[imgpath] = pyramid_images
-        labels_pyramids[imgpath] = pyramid_labels
+                resized_gt = downsample(labels[imgpath], (new_h,new_w))
+                pyramid_labels.append(resized_gt)
+            images_pyramids[imgpath] = pyramid_images
+            labels_pyramids[imgpath] = pyramid_labels
+        pickle('images_pyramids.pkl', images_pyramids)
+        pickle('labels_pyramids.pkl', labels_pyramids)
     return (images_pyramids, labels_pyramids)
 
 def main():
@@ -150,8 +170,7 @@ def main():
         train_labels[im_path] = dmap
         val_labels[im_path] = crowd_number
     counting_dataset_pyramid, train_labels_pyramid = multiscale_pyramid(counting_dataset, train_labels)
-    print("Took %f seconds" % (time.time() - s))
-
+    
     # Ranking Dataset  
     ranking_dataset_path = 'ranking_data'  
     ranking_dataset = list()
@@ -164,13 +183,21 @@ def main():
     split_size = int(round(len(counting_dataset)/5))
     splits_list = list()
     for t in range(5):
-        splits_list.append(counting_dataset[t*split_size:t*split_size+split_size])    
+        splits_list.append(counting_dataset[t*split_size:t*split_size+split_size])   
 
-    # split_train_labels = {}
-    split_val_labels = {}
+    split_val_labels = {}        
     
     mae_sum = 0.0
     mse_sum = 0.0
+
+    #create folder to save results
+    date = str(datetime.datetime.now())
+    d = date.split()
+    d1 = d[0]
+    d2 = d[1].split(':')    
+    results_folder = 'Results-'+d1+'-'+d2[0]+'.'+d2[1]
+    if not os.path.exists(results_folder):
+        os.makedirs(results_folder)    
     
     # 5-fold cross validation
     epochs = int(round(20000/8))
@@ -179,14 +206,9 @@ def main():
         print('\nFold '+str(f))
         
         # Model
-        model = VGG16(include_top=True, weights='imagenet') 
+        model = VGG16(include_top=False, weights='imagenet') 
         transfer_layer = model.get_layer('block5_conv3')
-        conv_model = Model(inputs=[model.input], outputs=[transfer_layer.output])
-        
-        # l2 weight decay
-        for layer in conv_model.layers:
-            if hasattr(layer, 'kernel_regularizer'):
-                layer.kernel_regularizer = regularizers.l2(5e-4)
+        conv_model = Model(inputs=[model.input], outputs=[transfer_layer.output],name='vgg_partial')
         
         counting_input = Input(shape=(224, 224, 3), dtype='float32', name='counting_input')
         ranking_input = Input(shape=(224, 224, 3), dtype='float32', name='ranking_input')
@@ -196,19 +218,24 @@ def main():
         # The ranking output is computed using SUM pool. Here I use
         # GlobalAveragePooling2D followed by a multiplication by 14^2 to do
         # this.
-        ranking_output = Lambda(lambda i: 14.0 * 14.0 * i, name='ranking_output')(GlobalAveragePooling2D()(counting_output))
-        new_model = Model(inputs=[counting_input,ranking_input], outputs=[counting_output,ranking_output])
-        new_model.summary()
+        ranking_output = Lambda(lambda i: 14.0 * 14.0 * i, name='ranking_output')(GlobalAveragePooling2D(name='global_average_pooling2d')(counting_output))
+        train_model = Model(inputs=[counting_input,ranking_input], outputs=[counting_output,ranking_output])
+        train_model.summary()                
 
         # l2 weight decay
-        for layer in new_model.layers:
+        for layer in train_model.layers:
             if hasattr(layer, 'kernel_regularizer'):
-                layer.kernel_regularizer = regularizers.l2(5e-4)
+                layer.kernel_regularizer = regularizers.l2(5e-4)        
+            elif layer.name == 'vgg_partial':
+                for l in layer.layers:                    
+                    if hasattr(l, 'kernel_regularizer'):
+                        l.kernel_regularizer = regularizers.l2(5e-4)                                  
                 
-        optimizer = SGD(lr=0.0, decay=0.0, momentum=0.0, nesterov=False)
+        optimizer = SGD(lr=0.0, decay=0.0, momentum=0.9, nesterov=False)
+#        optimizer = Adam(lr=0.0,decay=0.0)
         loss={'counting_output': euclideanDistanceCountingLoss, 'ranking_output': pairwiseRankingHingeLoss}
-        loss_weights=[1.0, 0.0]
-        new_model.compile(optimizer=optimizer,
+        loss_weights=[1.0, 0.00001]
+        train_model.compile(optimizer=optimizer,
                         loss=loss,
                         loss_weights=loss_weights)                      
 
@@ -252,43 +279,68 @@ def main():
         train_generator = DataGenerator(counting_dataset_pyramid_split_shuf, train_labels_pyramid_split_shuf, ranking_dataset, **params)
         lrate = LearningRateScheduler(step_decay)
         callbacks_list = [lrate]
-        new_model.fit_generator(generator=train_generator, epochs=epochs, callbacks=callbacks_list)
+        train_model.fit_generator(generator=train_generator, epochs=epochs, callbacks=callbacks_list)
 
+        #test images 224x224
         X_validation = np.empty((len(split_val), 224, 224, 3))
         y_validation = np.empty((len(split_val),1))
-        for i in range(len(split_val)):   
+        for i in range(len(split_val)):
             img = image.load_img(split_val[i], target_size=(224, 224))
             img_to_array = image.img_to_array(img)
             img_to_array = preprocess_input(img_to_array)
             X_validation[i,] = img_to_array
             y_validation[i] = split_val_labels[split_val[i]]
-        
+
         # ADB: use model.predict() to get outputs, use own code for evaluation.
-        pred_test = new_model.predict([X_validation, np.zeros((10, 224, 224, 3))])
+        pred_test = train_model.predict([X_validation, np.zeros((10, 224, 224, 3))])
         mean_abs_err = mae(pred_test[1], y_validation)
         mean_sqr_err = mse(pred_test[1], y_validation)
+                
+        # #test images original size
+        # tmp_model = train_model.get_layer('vgg_partial')
+        # test_input = Input(shape=(None, None, 3), dtype='float32', name='test_input')
+        # aa = tmp_model(test_input)
+        # co = train_model.get_layer('counting_output')(aa)
+        # gap = train_model.get_layer('global_average_pooling2d')(co)
+        # ro = train_model.get_layer('ranking_output')(gap)
+        # test_model = Model(inputs=[test_input], outputs=[ro])
+        # test_model.summary()
+        
+        # predictions = np.empty((len(split_val),1))
+        # y_validation = np.empty((len(split_val),1))
+        # for i in range(len(split_val)):
+            # img = image.load_img(split_val[i])
+            # img_to_array = image.img_to_array(img)
+            # img_to_array = preprocess_input(img_to_array)
+            # img_to_array = np.expand_dims(img_to_array, axis=0)
+        
+            # pred_test = test_model.predict(img_to_array)
+            # predictions[i] = pred_test[0]
+            # y_validation[i] = split_val_labels[split_val[i]]
+        
+        # mean_abs_err = mae(predictions, y_validation)
+        # mean_sqr_err = mse(predictions, y_validation)            
+        
         print('\n######################')
         print('Results on TEST SPLIT:')
         print(' MAE: {}'.format(mean_abs_err))
         print(' MSE: {}'.format(mean_sqr_err))
+        print("Took %f seconds" % (time.time() - s))
+        path1 = results_folder+'\\test_split_results_fold-'+str(f)+'.txt'
+        with open(path1, 'w') as f:
+            f.write('mae: %f,\nmse: %f, \nTook %f seconds' % (mean_abs_err,mean_sqr_err,time.time() - s))
 
         mae_sum = mae_sum + mean_abs_err
         mse_sum = mse_sum + mean_sqr_err
-        
-        print('\n################################')
-        tr_X = train_generator[0][0]['counting_input']
-        tr_y = train_generator[0][1]['counting_output'].sum(1).sum(1).sum(1)
-        pred_train = new_model.predict([tr_X, np.zeros((25, 224, 224, 3))])
-        print('Results on FIRST TRAINING BATCH:')
-        print(' MAE: {}'.format(mae(pred_train[1], tr_y)))
-        print(' MSE: {}'.format(mse(pred_train[1], tr_y)))
-        print("Took %f seconds" % (time.time() - s))
     
     print('\n################################')
     print('Average Results on TEST SPLIT:')    
     print(' AVE MAE: {}'.format(mae_sum/n_fold))
     print(' AVE MSE: {}'.format(mse_sum/n_fold))
     print("Took %f seconds" % (time.time() - s))
+    path2 = results_folder+'\\test_split_results_avg.txt'
+    with open(path2, 'w') as f:
+        f.write('avg_mae: %f, \navg_mse: %f, \nTook %f seconds' % (mae_sum/n_fold,mse_sum/n_fold,time.time() - s))
         
 if __name__ == "__main__":
     s = time.time()
