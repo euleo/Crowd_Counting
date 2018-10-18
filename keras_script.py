@@ -190,7 +190,7 @@ def main():
     mae_sum = 0.0
     mse_sum = 0.0
 
-    #create folder to save results
+    # create folder to save results
     date = str(datetime.datetime.now())
     d = date.split()
     d1 = d[0]
@@ -326,7 +326,7 @@ def main():
         print(' MAE: {}'.format(mean_abs_err))
         print(' MSE: {}'.format(mean_sqr_err))
         print("Took %f seconds" % (time.time() - s))
-        path1 = results_folder+'\\test_split_results_fold-'+str(f)+'.txt'
+        path1 = results_folder+'/test_split_results_fold-'+str(f)+'.txt'
         with open(path1, 'w') as f:
             f.write('mae: %f,\nmse: %f, \nTook %f seconds' % (mean_abs_err,mean_sqr_err,time.time() - s))
 
@@ -338,7 +338,7 @@ def main():
     print(' AVE MAE: {}'.format(mae_sum/n_fold))
     print(' AVE MSE: {}'.format(mse_sum/n_fold))
     print("Took %f seconds" % (time.time() - s))
-    path2 = results_folder+'\\test_split_results_avg.txt'
+    path2 = results_folder+'/test_split_results_avg.txt'
     with open(path2, 'w') as f:
         f.write('avg_mae: %f, \navg_mse: %f, \nTook %f seconds' % (mae_sum/n_fold,mse_sum/n_fold,time.time() - s))
         
