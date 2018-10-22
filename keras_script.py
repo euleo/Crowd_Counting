@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from tensorflow.python.keras.callbacks import TensorBoard, LearningRateScheduler
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.models import Model, load_model
-from tensorflow.python.keras.layers import Input, Conv2D, GlobalAveragePooling2D, Lambda
+from tensorflow.python.keras.layers import Input, Conv2D, GlobalAveragePooling2D, Lambda, AveragePooling2D
 from tensorflow.python.keras.applications import VGG16
 from tensorflow.python.keras.optimizers import SGD, Adam
 from scipy.ndimage.filters import gaussian_filter 
@@ -49,6 +49,7 @@ def pairwiseRankingHingeLoss(yTrue,yPred):
         @param yPred: net predictions for ranking output.
         @return: pairwise ranking hinge loss for ranking output.
     '''
+    yPred = tf.Print(yPred, [yPred], message='\nRanking_yPred = ', summarize=25)
     M_tensor = K.constant(M)
     differences = K.dot(M_tensor,yPred)
     zeros_tensor = K.zeros(shape=(50, 1))    
@@ -56,7 +57,8 @@ def pairwiseRankingHingeLoss(yTrue,yPred):
     ranking_loss = K.sum(max_tensor)
     return ranking_loss  
 
-def euclideanDistanceCountingLoss(yTrue,yPred):   
+def euclideanDistanceCountingLoss(yTrue,yPred):
+    yPred = tf.Print(yPred, [yPred], message='\nCounting_yPred = ', summarize=4900)
     subtraction = yTrue - yPred
     sq = K.square(subtraction)
     counting_loss = K.mean(sq, axis=None, keepdims=False)
@@ -97,7 +99,7 @@ def mae(pred, gt):
 def step_decay(epoch):
     initial_lrate = 1e-6
     drop = 0.1
-    epochs_drop = int(round((20000/8)/2))
+    epochs_drop = int(round((iterations/iterations_per_epoch)/2))
     lrate = initial_lrate * math.pow(drop, math.floor((1+epoch)/epochs_drop))
     return lrate
     
@@ -131,7 +133,7 @@ def multiscale_pyramid(images, labels, start=0.7, end=1.1):
 
     else:
         print('Creating scale pyramid...')
-        interval = np.linspace(start, end, 5)
+        interval = np.linspace(start, end, pyramid_scales)
         images_pyramids = {}
         labels_pyramids = {}
         for i, imgpath in enumerate(images):
@@ -200,7 +202,7 @@ def main():
         os.makedirs(results_folder)    
     
     # 5-fold cross validation
-    epochs = int(round(20000/8))
+    epochs = int(round(iterations/iterations_per_epoch))
     n_fold = 5
     for f in range(0,n_fold):
         print('\nFold '+str(f))
@@ -220,7 +222,6 @@ def main():
         # this.
         ranking_output = Lambda(lambda i: 14.0 * 14.0 * i, name='ranking_output')(GlobalAveragePooling2D(name='global_average_pooling2d')(counting_output))
         train_model = Model(inputs=[counting_input,ranking_input], outputs=[counting_output,ranking_output])
-        train_model.summary()                
 
         # l2 weight decay
         for layer in train_model.layers:
@@ -234,7 +235,7 @@ def main():
         optimizer = SGD(lr=0.0, decay=0.0, momentum=0.9, nesterov=False)
 #        optimizer = Adam(lr=0.0,decay=0.0)
         loss={'counting_output': euclideanDistanceCountingLoss, 'ranking_output': pairwiseRankingHingeLoss}
-        loss_weights=[1.0, 0.00001]
+        loss_weights=[1.0, 0.001]
         train_model.compile(optimizer=optimizer,
                         loss=loss,
                         loss_weights=loss_weights)                      
@@ -280,46 +281,29 @@ def main():
         lrate = LearningRateScheduler(step_decay)
         callbacks_list = [lrate]
         train_model.fit_generator(generator=train_generator, epochs=epochs, callbacks=callbacks_list)
-
-        #test images 224x224
-        X_validation = np.empty((len(split_val), 224, 224, 3))
+                
+        #test images original size       
+        tmp_model = train_model.get_layer('vgg_partial')
+        test_input = Input(shape=(None, None, 3), dtype='float32', name='test_input')
+        new_input = tmp_model(test_input)
+        co = train_model.get_layer('counting_output')(new_input)
+        test_output = Lambda(lambda i: K.sum(i,axis=(1,2)), name='test_output')(co)
+        test_model = Model(inputs=[test_input], outputs=[test_output])
+        
+        predictions = np.empty((len(split_val),1))
         y_validation = np.empty((len(split_val),1))
         for i in range(len(split_val)):
-            img = image.load_img(split_val[i], target_size=(224, 224))
+            img = image.load_img(split_val[i])
             img_to_array = image.img_to_array(img)
             img_to_array = preprocess_input(img_to_array)
-            X_validation[i,] = img_to_array
+            img_to_array = np.expand_dims(img_to_array, axis=0)
+        
+            pred_test = test_model.predict(img_to_array)
+            predictions[i] = pred_test[0]
             y_validation[i] = split_val_labels[split_val[i]]
-
-        # ADB: use model.predict() to get outputs, use own code for evaluation.
-        pred_test = train_model.predict([X_validation, np.zeros((10, 224, 224, 3))])
-        mean_abs_err = mae(pred_test[1], y_validation)
-        mean_sqr_err = mse(pred_test[1], y_validation)
-                
-        # #test images original size
-        # tmp_model = train_model.get_layer('vgg_partial')
-        # test_input = Input(shape=(None, None, 3), dtype='float32', name='test_input')
-        # aa = tmp_model(test_input)
-        # co = train_model.get_layer('counting_output')(aa)
-        # gap = train_model.get_layer('global_average_pooling2d')(co)
-        # ro = train_model.get_layer('ranking_output')(gap)
-        # test_model = Model(inputs=[test_input], outputs=[ro])
-        # test_model.summary()
         
-        # predictions = np.empty((len(split_val),1))
-        # y_validation = np.empty((len(split_val),1))
-        # for i in range(len(split_val)):
-            # img = image.load_img(split_val[i])
-            # img_to_array = image.img_to_array(img)
-            # img_to_array = preprocess_input(img_to_array)
-            # img_to_array = np.expand_dims(img_to_array, axis=0)
-        
-            # pred_test = test_model.predict(img_to_array)
-            # predictions[i] = pred_test[0]
-            # y_validation[i] = split_val_labels[split_val[i]]
-        
-        # mean_abs_err = mae(predictions, y_validation)
-        # mean_sqr_err = mse(predictions, y_validation)            
+        mean_abs_err = mae(predictions, y_validation)
+        mean_sqr_err = mse(predictions, y_validation)               
         
         print('\n######################')
         print('Results on TEST SPLIT:')
@@ -345,6 +329,11 @@ def main():
 if __name__ == "__main__":
     s = time.time()
     batch_size = 25
+    iterations = 20000
+    pyramid_scales = 5
+    train_split_length = 40
+    iterations_per_epoch = int(round((train_split_length * pyramid_scales)/batch_size))
+    print(iterations_per_epoch)
     M = createMatrixForLoss(batch_size)
     params = {'dim': (224,224),
               'batch_size': batch_size, 

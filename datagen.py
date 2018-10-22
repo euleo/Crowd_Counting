@@ -167,6 +167,6 @@ class DataGenerator(tf.keras.utils.Sequence):
                 crop_resized_array_preproc_subpatch = preprocess_input(crop_resized_array_subpatch)
                 X_ranking[(i*k)+j-1,] = crop_resized_array_preproc_subpatch
         # dummy ranking batch target        
-        y_ranking = np.zeros((self.batch_size,1)) 
+        y_ranking = np.zeros((self.batch_size,1,1,1)) 
         return {'counting_input': X_counting, 'ranking_input': X_ranking}, {'counting_output': y_counting, 'ranking_output': y_ranking}
 
