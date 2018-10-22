@@ -49,7 +49,7 @@ def pairwiseRankingHingeLoss(yTrue,yPred):
         @param yPred: net predictions for ranking output.
         @return: pairwise ranking hinge loss for ranking output.
     '''
-    yPred = tf.Print(yPred, [yPred], message='\nRanking_yPred = ', summarize=25)
+#    yPred = tf.Print(yPred, [yPred], message='\nRanking_yPred = ', summarize=25)
     M_tensor = K.constant(M)
     differences = K.dot(M_tensor,yPred)
     zeros_tensor = K.zeros(shape=(50, 1))    
@@ -58,7 +58,7 @@ def pairwiseRankingHingeLoss(yTrue,yPred):
     return ranking_loss  
 
 def euclideanDistanceCountingLoss(yTrue,yPred):
-    yPred = tf.Print(yPred, [yPred], message='\nCounting_yPred = ', summarize=4900)
+#    yPred = tf.Print(yPred, [yPred], message='\nCounting_yPred = ', summarize=4900)
     subtraction = yTrue - yPred
     sq = K.square(subtraction)
     counting_loss = K.mean(sq, axis=None, keepdims=False)
@@ -235,7 +235,7 @@ def main():
         optimizer = SGD(lr=0.0, decay=0.0, momentum=0.9, nesterov=False)
 #        optimizer = Adam(lr=0.0,decay=0.0)
         loss={'counting_output': euclideanDistanceCountingLoss, 'ranking_output': pairwiseRankingHingeLoss}
-        loss_weights=[1.0, 0.001]
+        loss_weights=[1.0, 0.00001]
         train_model.compile(optimizer=optimizer,
                         loss=loss,
                         loss_weights=loss_weights)                      
@@ -333,7 +333,6 @@ if __name__ == "__main__":
     pyramid_scales = 5
     train_split_length = 40
     iterations_per_epoch = int(round((train_split_length * pyramid_scales)/batch_size))
-    print(iterations_per_epoch)
     M = createMatrixForLoss(batch_size)
     params = {'dim': (224,224),
               'batch_size': batch_size, 
