@@ -222,7 +222,8 @@ def main():
         # this.
         ranking_output = Lambda(lambda i: 14.0 * 14.0 * i, name='ranking_output')(GlobalAveragePooling2D(name='global_average_pooling2d')(counting_output))
         train_model = Model(inputs=[counting_input,ranking_input], outputs=[counting_output,ranking_output])
-
+        train_model.summary()
+        
         # l2 weight decay
         for layer in train_model.layers:
             if hasattr(layer, 'kernel_regularizer'):
@@ -275,7 +276,7 @@ def main():
         train_labels_pyramid_split_shuf = []
         for i in index_shuf:
             counting_dataset_pyramid_split_shuf.append(counting_dataset_pyramid_split[i])
-            train_labels_pyramid_split_shuf.append(train_labels_pyramid_split[i])
+            train_labels_pyramid_split_shuf.append(train_labels_pyramid_split[i])                
         
         train_generator = DataGenerator(counting_dataset_pyramid_split_shuf, train_labels_pyramid_split_shuf, ranking_dataset, **params)
         lrate = LearningRateScheduler(step_decay)

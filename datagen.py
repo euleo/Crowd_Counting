@@ -3,6 +3,8 @@ import tensorflow as tf
 import random
 import math
 import PIL
+import os
+import matplotlib.pyplot as plt
 
 from tensorflow.python.keras.applications.vgg16 import preprocess_input
 from tensorflow.python.keras.preprocessing import image
@@ -165,8 +167,9 @@ class DataGenerator(tf.keras.utils.Sequence):
                 crop_resized_subpatch = crop_subpatch.resize((224,224),PIL.Image.BILINEAR)                
                 crop_resized_array_subpatch = image.img_to_array(crop_resized_subpatch)               
                 crop_resized_array_preproc_subpatch = preprocess_input(crop_resized_array_subpatch)
-                X_ranking[(i*k)+j-1,] = crop_resized_array_preproc_subpatch
+                X_ranking[(i*k)+j-1,] = crop_resized_array_preproc_subpatch      
+                
         # dummy ranking batch target        
-        y_ranking = np.zeros((self.batch_size,1,1,1)) 
+        y_ranking = np.zeros((self.batch_size,1)) 
         return {'counting_input': X_counting, 'ranking_input': X_ranking}, {'counting_output': y_counting, 'ranking_output': y_ranking}
 
