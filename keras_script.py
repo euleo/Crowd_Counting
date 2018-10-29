@@ -176,15 +176,7 @@ def main():
     ranking_dataset_path = 'ranking_data'  
     ranking_dataset = list()
     for im_path in glob.glob(os.path.join(ranking_dataset_path, '*.jpg')):
-        ranking_dataset.append(im_path)
-
-    # # randomize the order of images before splitting
-    # np.random.shuffle(counting_dataset)
-
-    # split_size = int(round(len(counting_dataset)/5))
-    # splits_list = list()
-    # for t in range(5):
-        # splits_list.append(counting_dataset[t*split_size:t*split_size+split_size])   
+        ranking_dataset.append(im_path) 
 
     split_val_labels = {}        
     
@@ -201,8 +193,7 @@ def main():
         os.makedirs(results_folder)    
     
     # 5-fold cross validation
-    # epochs = int(round(iterations/iterations_per_epoch))
-    epochs = 1
+    epochs = int(round(iterations/iterations_per_epoch))
     n_fold = 5
     for f in range(0,n_fold):
         print('\nFold '+str(f))
@@ -240,17 +231,6 @@ def main():
         train_model.compile(optimizer=optimizer,
                         loss=loss,
                         loss_weights=loss_weights)                      
-
-        # splits_list_tmp = splits_list.copy()
-        
-        # # counting validation split
-        # split_val = splits_list_tmp[f]
-        
-        # del splits_list_tmp[f]
-        # flat=itertools.chain.from_iterable(splits_list_tmp)
-        
-        # # counting train split
-        # split_train = list(flat)
         
         if f == 0:
             split_train = ['counting_data_UCF/25.jpg','counting_data_UCF/49.jpg','counting_data_UCF/18.jpg','counting_data_UCF/13.jpg','counting_data_UCF/28.jpg','counting_data_UCF/34.jpg','counting_data_UCF/17.jpg','counting_data_UCF/3.jpg','counting_data_UCF/26.jpg','counting_data_UCF/15.jpg','counting_data_UCF/31.jpg','counting_data_UCF/6.jpg','counting_data_UCF/33.jpg','counting_data_UCF/2.jpg','counting_data_UCF/30.jpg','counting_data_UCF/36.jpg','counting_data_UCF/42.jpg','counting_data_UCF/20.jpg','counting_data_UCF/38.jpg','counting_data_UCF/11.jpg','counting_data_UCF/5.jpg','counting_data_UCF/7.jpg','counting_data_UCF/4.jpg','counting_data_UCF/21.jpg','counting_data_UCF/27.jpg','counting_data_UCF/39.jpg','counting_data_UCF/22.jpg','counting_data_UCF/43.jpg','counting_data_UCF/32.jpg','counting_data_UCF/35.jpg','counting_data_UCF/8.jpg','counting_data_UCF/50.jpg','counting_data_UCF/12.jpg','counting_data_UCF/19.jpg','counting_data_UCF/44.jpg','counting_data_UCF/23.jpg','counting_data_UCF/9.jpg','counting_data_UCF/46.jpg','counting_data_UCF/16.jpg','counting_data_UCF/41.jpg']
