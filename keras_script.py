@@ -48,7 +48,7 @@ def pairwiseRankingHingeLoss(yTrue,yPred):
         @param yPred: net predictions for ranking output.
         @return: pairwise ranking hinge loss for ranking output.
     '''
-#    yPred = tf.Print(yPred, [yPred], message='\nRanking_yPred = ', summarize=25)
+    # yPred = tf.Print(yPred, [yPred], message='\nRanking_yPred = ', summarize=25)
     M_tensor = K.constant(M)
     differences = K.dot(M_tensor,yPred)
     zeros_tensor = K.zeros(shape=(50, 1))    
@@ -57,7 +57,7 @@ def pairwiseRankingHingeLoss(yTrue,yPred):
     return ranking_loss  
 
 def euclideanDistanceCountingLoss(yTrue,yPred):
-#    yPred = tf.Print(yPred, [yPred], message='\nCounting_yPred = ', summarize=4900)
+    # yPred = tf.Print(yPred, [yPred], message='\nCounting_yPred = ', summarize=4900)
     subtraction = yTrue - yPred
     sq = K.square(subtraction)
     counting_loss = K.mean(sq, axis=None, keepdims=False)
@@ -176,7 +176,15 @@ def main():
     ranking_dataset_path = 'ranking_data'  
     ranking_dataset = list()
     for im_path in glob.glob(os.path.join(ranking_dataset_path, '*.jpg')):
-        ranking_dataset.append(im_path) 
+        ranking_dataset.append(im_path)
+
+    # randomize the order of images before splitting
+    np.random.shuffle(counting_dataset)
+
+    split_size = int(round(len(counting_dataset)/5))
+    splits_list = list()
+    for t in range(5):
+        splits_list.append(counting_dataset[t*split_size:t*split_size+split_size])   
 
     split_val_labels = {}        
     
@@ -195,6 +203,7 @@ def main():
     # 5-fold cross validation
     epochs = int(round(iterations/iterations_per_epoch))
     n_fold = 5
+
     for f in range(0,n_fold):
         print('\nFold '+str(f))
         
@@ -206,15 +215,15 @@ def main():
         counting_input = Input(shape=(224, 224, 3), dtype='float32', name='counting_input')
         ranking_input = Input(shape=(224, 224, 3), dtype='float32', name='ranking_input')
         x = conv_model([counting_input,ranking_input])
-        counting_output = Conv2D(1, (3, 3),strides=(1, 1), padding='same', data_format=None, dilation_rate=(1, 1), activation=None, use_bias=True, kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=None, bias_regularizer=None, activity_regularizer=None, kernel_constraint=None, bias_constraint=None, name='counting_output')(x)
+        counting_output = Conv2D(1, (3, 3),strides=(1, 1), padding='same', data_format=None, dilation_rate=(1, 1), activation='relu', use_bias=True, kernel_initializer='glorot_uniform', bias_initializer='zeros', kernel_regularizer=None, bias_regularizer=None, activity_regularizer=None, kernel_constraint=None, bias_constraint=None, name='counting_output')(x)
         
         # The ranking output is computed using SUM pool. Here I use
         # GlobalAveragePooling2D followed by a multiplication by 14^2 to do
         # this.
-        ranking_output = GlobalAveragePooling2D(name='ranking_output')(counting_output)
+        ranking_output = Lambda(lambda i: 14.0 * 14.0 * i, name='ranking_output')(GlobalAveragePooling2D(name='global_average_pooling2d')(counting_output))
         train_model = Model(inputs=[counting_input,ranking_input], outputs=[counting_output,ranking_output])
-        train_model.summary()
-        
+        train_model.summary()                
+
         # l2 weight decay
         for layer in train_model.layers:
             if hasattr(layer, 'kernel_regularizer'):
@@ -225,37 +234,25 @@ def main():
                         l.kernel_regularizer = regularizers.l2(5e-4)                                  
                 
         optimizer = SGD(lr=0.0, decay=0.0, momentum=0.9, nesterov=False)
-#        optimizer = Adam(lr=0.0,decay=0.0)
         loss={'counting_output': euclideanDistanceCountingLoss, 'ranking_output': pairwiseRankingHingeLoss}
-        loss_weights=[1.0, 0.00001]
+        loss_weights=[1.0, 0.0]
         train_model.compile(optimizer=optimizer,
                         loss=loss,
                         loss_weights=loss_weights)                      
+
+        splits_list_tmp = splits_list.copy()
         
-        if f == 0:
-            split_train = ['counting_data_UCF/25.jpg','counting_data_UCF/49.jpg','counting_data_UCF/18.jpg','counting_data_UCF/13.jpg','counting_data_UCF/28.jpg','counting_data_UCF/34.jpg','counting_data_UCF/17.jpg','counting_data_UCF/3.jpg','counting_data_UCF/26.jpg','counting_data_UCF/15.jpg','counting_data_UCF/31.jpg','counting_data_UCF/6.jpg','counting_data_UCF/33.jpg','counting_data_UCF/2.jpg','counting_data_UCF/30.jpg','counting_data_UCF/36.jpg','counting_data_UCF/42.jpg','counting_data_UCF/20.jpg','counting_data_UCF/38.jpg','counting_data_UCF/11.jpg','counting_data_UCF/5.jpg','counting_data_UCF/7.jpg','counting_data_UCF/4.jpg','counting_data_UCF/21.jpg','counting_data_UCF/27.jpg','counting_data_UCF/39.jpg','counting_data_UCF/22.jpg','counting_data_UCF/43.jpg','counting_data_UCF/32.jpg','counting_data_UCF/35.jpg','counting_data_UCF/8.jpg','counting_data_UCF/50.jpg','counting_data_UCF/12.jpg','counting_data_UCF/19.jpg','counting_data_UCF/44.jpg','counting_data_UCF/23.jpg','counting_data_UCF/9.jpg','counting_data_UCF/46.jpg','counting_data_UCF/16.jpg','counting_data_UCF/41.jpg']
-            split_val = ['counting_data_UCF/37.jpg','counting_data_UCF/48.jpg','counting_data_UCF/29.jpg','counting_data_UCF/10.jpg','counting_data_UCF/14.jpg','counting_data_UCF/1.jpg','counting_data_UCF/45.jpg','counting_data_UCF/47.jpg','counting_data_UCF/40.jpg','counting_data_UCF/24.jpg']
-            split_val_labels = {k: val_labels[k] for k in split_val}
+        # counting validation split
+        split_val = splits_list_tmp[f]
         
-        elif f == 1:
-            split_train = ['counting_data_UCF/37.jpg','counting_data_UCF/48.jpg','counting_data_UCF/29.jpg','counting_data_UCF/10.jpg','counting_data_UCF/14.jpg','counting_data_UCF/1.jpg','counting_data_UCF/45.jpg','counting_data_UCF/47.jpg','counting_data_UCF/40.jpg','counting_data_UCF/24.jpg','counting_data_UCF/31.jpg','counting_data_UCF/6.jpg','counting_data_UCF/33.jpg','counting_data_UCF/2.jpg','counting_data_UCF/30.jpg','counting_data_UCF/36.jpg','counting_data_UCF/42.jpg','counting_data_UCF/20.jpg','counting_data_UCF/38.jpg','counting_data_UCF/11.jpg','counting_data_UCF/5.jpg','counting_data_UCF/7.jpg','counting_data_UCF/4.jpg','counting_data_UCF/21.jpg','counting_data_UCF/27.jpg','counting_data_UCF/39.jpg','counting_data_UCF/22.jpg','counting_data_UCF/43.jpg','counting_data_UCF/32.jpg','counting_data_UCF/35.jpg','counting_data_UCF/8.jpg','counting_data_UCF/50.jpg','counting_data_UCF/12.jpg','counting_data_UCF/19.jpg','counting_data_UCF/44.jpg','counting_data_UCF/23.jpg','counting_data_UCF/9.jpg','counting_data_UCF/46.jpg','counting_data_UCF/16.jpg','counting_data_UCF/41.jpg']
-            split_val = ['counting_data_UCF/25.jpg','counting_data_UCF/49.jpg','counting_data_UCF/18.jpg','counting_data_UCF/13.jpg','counting_data_UCF/28.jpg','counting_data_UCF/34.jpg','counting_data_UCF/17.jpg','counting_data_UCF/3.jpg','counting_data_UCF/26.jpg','counting_data_UCF/15.jpg']
-            split_val_labels = {k: val_labels[k] for k in split_val}
+        del splits_list_tmp[f]
+        flat=itertools.chain.from_iterable(splits_list_tmp)
         
-        elif f == 2:
-            split_train = ['counting_data_UCF/37.jpg','counting_data_UCF/48.jpg','counting_data_UCF/29.jpg','counting_data_UCF/10.jpg','counting_data_UCF/14.jpg','counting_data_UCF/1.jpg','counting_data_UCF/45.jpg','counting_data_UCF/47.jpg','counting_data_UCF/40.jpg','counting_data_UCF/24.jpg','counting_data_UCF/25.jpg','counting_data_UCF/49.jpg','counting_data_UCF/18.jpg','counting_data_UCF/13.jpg','counting_data_UCF/28.jpg','counting_data_UCF/34.jpg','counting_data_UCF/17.jpg','counting_data_UCF/3.jpg','counting_data_UCF/26.jpg','counting_data_UCF/15.jpg','counting_data_UCF/5.jpg','counting_data_UCF/7.jpg','counting_data_UCF/4.jpg','counting_data_UCF/21.jpg','counting_data_UCF/27.jpg','counting_data_UCF/39.jpg','counting_data_UCF/22.jpg','counting_data_UCF/43.jpg','counting_data_UCF/32.jpg','counting_data_UCF/35.jpg','counting_data_UCF/8.jpg','counting_data_UCF/50.jpg','counting_data_UCF/12.jpg','counting_data_UCF/19.jpg','counting_data_UCF/44.jpg','counting_data_UCF/23.jpg','counting_data_UCF/9.jpg','counting_data_UCF/46.jpg','counting_data_UCF/16.jpg','counting_data_UCF/41.jpg']
-            split_val = ['counting_data_UCF/31.jpg','counting_data_UCF/6.jpg','counting_data_UCF/33.jpg','counting_data_UCF/2.jpg','counting_data_UCF/30.jpg','counting_data_UCF/36.jpg','counting_data_UCF/42.jpg','counting_data_UCF/20.jpg','counting_data_UCF/38.jpg','counting_data_UCF/11.jpg']
-            split_val_labels = {k: val_labels[k] for k in split_val}
-        
-        elif f == 3:
-            split_train = ['counting_data_UCF/37.jpg','counting_data_UCF/48.jpg','counting_data_UCF/29.jpg','counting_data_UCF/10.jpg','counting_data_UCF/14.jpg','counting_data_UCF/1.jpg','counting_data_UCF/45.jpg','counting_data_UCF/47.jpg','counting_data_UCF/40.jpg','counting_data_UCF/24.jpg','counting_data_UCF/25.jpg','counting_data_UCF/49.jpg','counting_data_UCF/18.jpg','counting_data_UCF/13.jpg','counting_data_UCF/28.jpg','counting_data_UCF/34.jpg','counting_data_UCF/17.jpg','counting_data_UCF/3.jpg','counting_data_UCF/26.jpg','counting_data_UCF/15.jpg','counting_data_UCF/31.jpg','counting_data_UCF/6.jpg','counting_data_UCF/33.jpg','counting_data_UCF/2.jpg','counting_data_UCF/30.jpg','counting_data_UCF/36.jpg','counting_data_UCF/42.jpg','counting_data_UCF/20.jpg','counting_data_UCF/38.jpg','counting_data_UCF/11.jpg','counting_data_UCF/8.jpg','counting_data_UCF/50.jpg','counting_data_UCF/12.jpg','counting_data_UCF/19.jpg','counting_data_UCF/44.jpg','counting_data_UCF/23.jpg','counting_data_UCF/9.jpg','counting_data_UCF/46.jpg','counting_data_UCF/16.jpg','counting_data_UCF/41.jpg']
-            split_val = ['counting_data_UCF/5.jpg','counting_data_UCF/7.jpg','counting_data_UCF/4.jpg','counting_data_UCF/21.jpg','counting_data_UCF/27.jpg','counting_data_UCF/39.jpg','counting_data_UCF/22.jpg','counting_data_UCF/43.jpg','counting_data_UCF/32.jpg','counting_data_UCF/35.jpg']
-            split_val_labels = {k: val_labels[k] for k in split_val}
-        
-        elif f == 4:
-            split_train = ['counting_data_UCF/37.jpg','counting_data_UCF/48.jpg','counting_data_UCF/29.jpg','counting_data_UCF/10.jpg','counting_data_UCF/14.jpg','counting_data_UCF/1.jpg','counting_data_UCF/45.jpg','counting_data_UCF/47.jpg','counting_data_UCF/40.jpg','counting_data_UCF/24.jpg','counting_data_UCF/25.jpg','counting_data_UCF/49.jpg','counting_data_UCF/18.jpg','counting_data_UCF/13.jpg','counting_data_UCF/28.jpg','counting_data_UCF/34.jpg','counting_data_UCF/17.jpg','counting_data_UCF/3.jpg','counting_data_UCF/26.jpg','counting_data_UCF/15.jpg','counting_data_UCF/31.jpg','counting_data_UCF/6.jpg','counting_data_UCF/33.jpg','counting_data_UCF/2.jpg','counting_data_UCF/30.jpg','counting_data_UCF/36.jpg','counting_data_UCF/42.jpg','counting_data_UCF/20.jpg','counting_data_UCF/38.jpg','counting_data_UCF/11.jpg','counting_data_UCF/5.jpg','counting_data_UCF/7.jpg','counting_data_UCF/4.jpg','counting_data_UCF/21.jpg','counting_data_UCF/27.jpg','counting_data_UCF/39.jpg','counting_data_UCF/22.jpg','counting_data_UCF/43.jpg','counting_data_UCF/32.jpg','counting_data_UCF/35.jpg']
-            split_val = ['counting_data_UCF/8.jpg','counting_data_UCF/50.jpg','counting_data_UCF/12.jpg','counting_data_UCF/19.jpg','counting_data_UCF/44.jpg','counting_data_UCF/23.jpg','counting_data_UCF/9.jpg','counting_data_UCF/46.jpg','counting_data_UCF/16.jpg','counting_data_UCF/41.jpg']
-            split_val_labels = {k: val_labels[k] for k in split_val}
+        # counting train split
+        split_train = list(flat)
+
+        # counting validation split labels
+        split_val_labels = {k: val_labels[k] for k in split_val}            
                 
         counting_dataset_pyramid_split = []
         train_labels_pyramid_split = []
@@ -278,14 +275,14 @@ def main():
         train_labels_pyramid_split_shuf = []
         for i in index_shuf:
             counting_dataset_pyramid_split_shuf.append(counting_dataset_pyramid_split[i])
-            train_labels_pyramid_split_shuf.append(train_labels_pyramid_split[i])                
+            train_labels_pyramid_split_shuf.append(train_labels_pyramid_split[i])
         
         train_generator = DataGenerator(counting_dataset_pyramid_split_shuf, train_labels_pyramid_split_shuf, ranking_dataset, **params)
         lrate = LearningRateScheduler(step_decay)
         callbacks_list = [lrate]
         train_model.fit_generator(generator=train_generator, epochs=epochs, callbacks=callbacks_list)
-                
-        #test images original size       
+
+        #test images       
         tmp_model = train_model.get_layer('vgg_partial')
         test_input = Input(shape=(None, None, 3), dtype='float32', name='test_input')
         new_input = tmp_model(test_input)
@@ -296,17 +293,27 @@ def main():
         predictions = np.empty((len(split_val),1))
         y_validation = np.empty((len(split_val),1))
         for i in range(len(split_val)):
-            img = image.load_img(split_val[i])
+            img = image.load_img(split_val[i], target_size=(224, 224))
             img_to_array = image.img_to_array(img)
             img_to_array = preprocess_input(img_to_array)
             img_to_array = np.expand_dims(img_to_array, axis=0)
         
             pred_test = test_model.predict(img_to_array)
-            predictions[i] = pred_test[0]
+            predictions[i] = pred_test
             y_validation[i] = split_val_labels[split_val[i]]
         
         mean_abs_err = mae(predictions, y_validation)
-        mean_sqr_err = mse(predictions, y_validation)               
+        mean_sqr_err = mse(predictions, y_validation)       
+
+        # serialize model to JSON
+        model_json = test_model.to_json()
+        model_json_name = "test_model_"+str(f)+".json"
+        with open(model_json_name, "w") as json_file:
+            json_file.write(model_json)
+        # serialize weights to HDF5
+        model_h5_name = "test_model_"+str(f)+".h5"
+        test_model.save_weights(model_h5_name)
+        print("Saved model to disk")
         
         print('\n######################')
         print('Results on TEST SPLIT:')
@@ -343,3 +350,4 @@ if __name__ == "__main__":
               'shuffle': True,
               'rank_images': int(round(batch_size/5))}
     main()
+
